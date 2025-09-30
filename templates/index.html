@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="description" content="TEI NLP Converter - Process natural language text with NLP and convert to TEI XML">
+    
+    <!-- Security headers -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="X-Frame-Options" content="SAMEORIGIN">
+    
+    <title>TEI NLP Converter v{{ version }}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>TEI NLP Converter</h1>
+            <p>Process natural language text and convert to TEI XML</p>
+            <div class="version">v{{ version }}</div>
+        </header>
+        
+        <main>
+            <!-- Status Messages -->
+            <div id="status-message" class="status-message" style="display: none;">
+                <span class="status-text"></span>
+                <button class="close-btn" onclick="closeStatus()">×</button>
+            </div>
+            
+            <!-- Input Section -->
+            <section class="input-section card">
+                <h2>Input Text</h2>
+                
+                <form id="process-form" method="post" action="/process">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    
+                    <div class="form-group">
+                        <label for="domain">Ontological Domain:</label>
+                        <select id="domain" name="domain" class="form-control" aria-label="Select ontological domain">
+                            {% for domain in domains %}
+                            <option value="{{ domain }}">{{ domain|title }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="help-text">Choose the domain for specialized TEI schema</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="text-input">Enter Text:</label>
+                        <textarea 
+                            id="text-input" 
+                            name="text"
+                            class="form-control" 
+                            rows="10" 
+                            maxlength="100000"
+                            placeholder="Enter or paste your text here (max 100,000 characters)..."
+                            aria-label="Input text for processing"></textarea>
+                        <div class="char-count">
+                            <span id="char-count">0</span> / 100,000 characters
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="file-input">Or Upload File:</label>
+                        <div class="file-input-wrapper">
+                            <input 
+                                type="file" 
+                                id="file-input" 
+                                accept=".txt,.text,.md,.markdown" 
+                                class="form-control"
+                                aria-label="Upload text file">
+                            <small class="help-text">Supported: .txt, .md (max 100KB)</small>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Processing Options:</label>
+                        <div class="checkbox-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="include-dependencies" name="include_dependencies" checked>
+                                Include dependencies
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="include-pos" name="include_pos" checked>
+                                Include POS tags
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="include-lemma" name="include_lemma" checked>
+                                Include lemmas
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <button id="process-btn" type="submit" class="btn btn-primary" aria-label="Process text">
+                        <span class="btn-text">Process Text</span>
+                        <span class="loading-spinner" style="display: none;"></span>
+                    </button>
+                </form>
+            </section>
+            
+            <!-- Results Section -->
+            <section class="results-section card" id="results" style="display: none;">
+                <h2>Processing Results</h2>
+                
+                <div class="processing-info">
+                    <span id="processing-time"></span>
+                    <span id="task-status"></span>
+                </div>
+                
+                <div class="tabs" role="tablist">
+                    <button class="tab-btn active" data-tab="nlp" role="tab" aria-selected="true">
+                        NLP Results
+                    </button>
+                    <button class="tab-btn" data-tab="tei" role="tab" aria-selected="false">
+                        TEI XML
+                    </button>
+                    <button class="tab-btn" data-tab="visual" role="tab" aria-selected="false">
+                        Visualization
+                    </button>
+                    <button class="tab-btn" data-tab="stats" role="tab" aria-selected="false">
+                        Statistics
+                    </button>
+                </div>
+                
+                <div class="tab-content">
+                    <div id="nlp-tab" class="tab-pane active" role="tabpanel">
+                        <h3>NLP Analysis</h3>
+                        <div id="nlp-results" class="results-container"></div>
+                    </div>
+                    
+                    <div id="tei-tab" class="tab-pane" role="tabpanel">
+                        <h3>TEI XML Output</h3>
+                        <div class="toolbar">
+                            <button id="copy-xml-btn" class="btn btn-sm">Copy XML</button>
+                            <button id="download-btn" class="btn btn-sm btn-secondary">Download TEI XML</button>
+                        </div>
+                        <pre id="tei-xml" class="xml-output"></pre>
+                    </div>
+                    
+                    <div id="visual-tab" class="tab-pane" role="tabpanel">
+                        <h3>TEI Structure Visualization</h3>
+                        <div id="tei-visual" class="tree-view"></div>
+                    </div>
+                    
+                    <div id="stats-tab" class="tab-pane" role="tabpanel">
+                        <h3>Processing Statistics</h3>
+                        <div id="stats-content" class="stats-grid"></div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- History Section -->
+            <section class="history-section card">
+                <h2>Processing History</h2>
+                <div class="history-controls">
+                    <button id="refresh-history-btn" class="btn btn-sm">Refresh</button>
+                    <select id="history-filter" class="form-control-sm">
+                        <option value="">All domains</option>
+                        {% for domain in domains %}
+                        <option value="{{ domain }}">{{ domain|title }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div id="history-list" class="history-list"></div>
+                <div id="history-pagination" class="pagination"></div>
+            </section>
+        </main>
+        
+        <footer>
+            <p>TEI NLP Converter © 2024 | <a href="/api/docs" target="_blank">API Documentation</a></p>
+        </footer>
+    </div>
+    
+    <!-- Task Progress Modal -->
+    <div id="task-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>Processing Large Text</h3>
+            <div class="progress-bar">
+                <div class="progress-fill"></div>
+            </div>
+            <p id="task-message">Processing your text in the background...</p>
+            <button id="cancel-task-btn" class="btn btn-sm">Cancel</button>
+        </div>
+    </div>
+    
+    <script src="/static/script.js"></script>
+</body>
+</html>
