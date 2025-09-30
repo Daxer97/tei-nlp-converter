@@ -895,7 +895,7 @@ async def get_domains():
 @app.get("/history", tags=["History"])
 async def get_history(
     limit: int = Query(10, ge=1, le=100),
-    offset: int = Field(0, ge=0),
+    offset: int = Query(0, ge=0),
     domain: Optional[str] = None,
     req: Request = None,
     auth_result = Depends(auth) if settings.require_auth else None
