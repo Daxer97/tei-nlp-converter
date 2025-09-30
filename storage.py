@@ -126,7 +126,7 @@ class Storage:
         
         self.engine = create_engine(
             self.db_url,
-            pool_class=pool_class,
+            poolclass=pool_class,    # ✅ correct
             pool_size=pool_size,
             max_overflow=max_overflow,
             pool_recycle=pool_recycle,
@@ -134,6 +134,7 @@ class Storage:
             echo=settings.get('debug', False),
             connect_args=connect_args
         )
+
         
         # Use thread-local sessions for thread safety
         self.SessionFactory = sessionmaker(bind=self.engine, expire_on_commit=False)
