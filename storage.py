@@ -71,9 +71,10 @@ class BackgroundTask(Base):
     )
 
 class AuditLog(Base):
-    __tablename__ = 'audit_logs'
-    
-    id = Column(Integer, primary_key=True, index=True)
+    __tablename__ = "audit_log"
+
+    id = Column(Integer, primary_key=True)
+    # Use a safe Python attribute name, but keep DB column as "metadata"
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
     request_id = Column(String(36), index=True)
     user_id = Column(String(255), index=True)
@@ -84,12 +85,13 @@ class AuditLog(Base):
     user_agent = Column(Text)
     status_code = Column(Integer)
     error_message = Column(Text)
-    metadata = Column(JSON)
-    
+    meta = Column("metadata", JSON)   # ✅ works fine    
+
     __table_args__ = (
         Index('idx_audit_user_timestamp', 'user_id', 'timestamp'),
         Index('idx_audit_action_timestamp', 'action', 'timestamp'),
     )
+
 
 class Storage:
     def __init__(self, db_url: str = None):
