@@ -68,4 +68,3 @@ def track_request(method: str, endpoint: str):
 def get_metrics():
     """Get Prometheus metrics"""
     return generate_latest()
-"""
