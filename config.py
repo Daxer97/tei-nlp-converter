@@ -103,6 +103,8 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"   # allow unknown env vars without error
+
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
