@@ -2,7 +2,7 @@
 app.py - Production Ready FastAPI Application with fixes
 """
 import time
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Depends, BackgroundTasks, status, Response, Form
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Depends, BackgroundTasks, status, Response, Form, Query
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
