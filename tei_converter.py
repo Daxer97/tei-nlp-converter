@@ -1,7 +1,8 @@
 """
 TEI XML Converter - Enhanced with validation and error handling
 """
-from defusedxml import ElementTree as ET
+from defusedxml import ElementTree as SafeET
+import xml.etree.ElementTree as ET
 from defusedxml.minidom import parseString
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
