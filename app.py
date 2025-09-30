@@ -414,7 +414,7 @@ templates = Jinja2Templates(directory="templates")
 # Request/Response Models with enhanced validation
 class TextProcessRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=settings.get('max_text_length', 100000))
-    domain: str = Field(default="default", regex="^[a-zA-Z0-9_-]+$", max_length=50)
+    domain: str = Field(default="default", pattern="^[a-zA-Z0-9_-]+$", max_length=50)
     options: Optional[Dict[str, Any]] = Field(default_factory=dict)
     
     @validator('text')
