@@ -806,7 +806,7 @@ async def upload_and_process(
     file: UploadFile = File(...),
     domain: str = Form("default"),
     background_tasks: BackgroundTasks = None,
-    req: Request = None,
+    request: Request = None,
     auth_result = Depends(auth) if settings.require_auth else None
 ):
     """Upload a file and process it"""
