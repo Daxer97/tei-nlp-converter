@@ -18,9 +18,16 @@ let state = {
 };
 
 // Get CSRF token from the page
+// Get CSRF token from cookie instead of input field
 function getCSRFToken() {
-    const tokenInput = document.querySelector('input[name="csrf_token"]');
-    return tokenInput ? tokenInput.value : '';
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+        const [name, value] = cookie.trim().split('=');
+        if (name === 'csrf_token') {
+            return decodeURIComponent(value);
+        }
+    }
+    return '';
 }
 
 // Security utilities
