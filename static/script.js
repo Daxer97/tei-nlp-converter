@@ -630,8 +630,25 @@ function displayPagination(total, currentPage) {
 }
 
 async function loadHistoryItem(id) {
-    UI.showStatus('Loading historical item...', 'info');
-    // Implementation would fetch and display the specific item
+    try {
+        UI.showStatus('Loading historical item...', 'info');
+        
+        // Fetch the processed text
+        const response = await fetch(`/download/${id}`);
+        if (!response.ok) throw new Error('Failed to load item');
+        
+        const teiXml = await response.text();
+        
+        // Display in results (you may want to also show NLP results)
+        document.getElementById('tei-xml').textContent = teiXml;
+        document.getElementById('results').style.display = 'block';
+        UI.switchTab('tei');
+        
+        state.currentProcessedId = id;
+        UI.showStatus('Item loaded successfully', 'success');
+    } catch (error) {
+        UI.showStatus(`Failed to load item: ${error.message}`, 'error');
+    }
 }
 
 async function deleteHistoryItem(id) {
