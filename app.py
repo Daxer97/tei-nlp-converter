@@ -541,11 +541,12 @@ async def home(request: Request):
     })
     
     # Set secure CSRF cookie
+    # Set secure CSRF cookie
     response.set_cookie(
         "csrf_token",
         csrf_token,
         max_age=settings.csrf_token_expiry,
-        httponly=True,
+        httponly=False,  # ← Change to False so JavaScript can read it
         samesite="strict",
         secure=(settings.environment == "production")
     )
