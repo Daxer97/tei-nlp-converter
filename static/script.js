@@ -631,23 +631,25 @@ function displayPagination(total, currentPage) {
 
 async function loadHistoryItem(id) {
     try {
-        UI.showStatus('Loading historical item...', 'info');
+        UI.showStatus('Loading item...', 'info');
         
-        // Fetch the processed text
-        const response = await fetch(`/download/${id}`);
-        if (!response.ok) throw new Error('Failed to load item');
+        // Fetch the full item data from the NEW endpoint
+        const response = await fetch(`/text/${id}`);
+        if (!response.ok) throw new Error('Item not found');
         
-        const teiXml = await response.text();
+        const item = await response.json();
         
-        // Display in results (you may want to also show NLP results)
-        document.getElementById('tei-xml').textContent = teiXml;
-        document.getElementById('results').style.display = 'block';
-        UI.switchTab('tei');
+        // Display full results using the existing displayResults function
+        displayResults({
+            id: item.id,
+            domain: item.domain,
+            nlp_results: item.nlp_results,
+            tei_xml: item.tei_xml
+        });
         
-        state.currentProcessedId = id;
         UI.showStatus('Item loaded successfully', 'success');
     } catch (error) {
-        UI.showStatus(`Failed to load item: ${error.message}`, 'error');
+        UI.showStatus(`Failed to load: ${error.message}`, 'error');
     }
 }
 
