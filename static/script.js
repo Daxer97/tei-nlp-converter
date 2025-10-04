@@ -257,7 +257,7 @@ async function processText(event) {
     const options = {
         include_dependencies: document.getElementById('include-dependencies').checked,
         include_pos: document.getElementById('include-pos').checked,
-        include_lemma: document.getElementById('include-lemma').checked
+        include_lemmas: document.getElementById('include-lemma').checked  // ← Change to include_lemmas
     };
     
     UI.showLoading(button);
