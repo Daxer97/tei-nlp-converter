@@ -657,33 +657,32 @@ async function deleteHistoryItem(id) {
     if (!confirm('Are you sure you want to delete this item?')) return;
     
     try {
-        // Optimistically remove from DOM immediately
-        const itemElement = document.querySelector(`.history-item[data-id="${id}"]`);
-        if (itemElement) {
-            itemElement.style.opacity = '0.5';
-            itemElement.style.pointerEvents = 'none';
-        }
-        
-        // Delete from backend
+        // Delete from backend first
         await API.request(`/text/${id}`, { method: 'DELETE' });
         
-        // Remove from DOM
+        // Manually update the DOM
+        const itemElement = document.querySelector(`.history-item[data-id="${id}"]`);
         if (itemElement) {
-            itemElement.remove();
+            // Fade out animation
+            itemElement.style.transition = 'opacity 0.3s';
+            itemElement.style.opacity = '0';
+            
+            // Remove after animation
+            setTimeout(() => {
+                itemElement.remove();
+                
+                // If no items left, show empty state
+                const container = document.getElementById('history-list');
+                if (container.querySelectorAll('.history-item').length === 0) {
+                    container.innerHTML = '<p class="empty-state">No processing history yet</p>';
+                }
+            }, 300);
         }
         
         UI.showStatus('Item deleted successfully', 'success');
         
-        // Reload history to sync pagination
-        setTimeout(() => loadHistory(state.historyPage), 500);
-        
     } catch (error) {
-        // Restore if delete failed
-        const itemElement = document.querySelector(`.history-item[data-id="${id}"]`);
-        if (itemElement) {
-            itemElement.style.opacity = '1';
-            itemElement.style.pointerEvents = 'auto';
-        }
+        console.error('Delete error:', error);
         UI.showStatus(`Failed to delete: ${error.message}`, 'error');
     }
 }
