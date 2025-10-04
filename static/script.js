@@ -657,10 +657,33 @@ async function deleteHistoryItem(id) {
     if (!confirm('Are you sure you want to delete this item?')) return;
     
     try {
+        // Optimistically remove from DOM immediately
+        const itemElement = document.querySelector(`.history-item[data-id="${id}"]`);
+        if (itemElement) {
+            itemElement.style.opacity = '0.5';
+            itemElement.style.pointerEvents = 'none';
+        }
+        
+        // Delete from backend
         await API.request(`/text/${id}`, { method: 'DELETE' });
+        
+        // Remove from DOM
+        if (itemElement) {
+            itemElement.remove();
+        }
+        
         UI.showStatus('Item deleted successfully', 'success');
-        loadHistory(state.historyPage);
+        
+        // Reload history to sync pagination
+        setTimeout(() => loadHistory(state.historyPage), 500);
+        
     } catch (error) {
+        // Restore if delete failed
+        const itemElement = document.querySelector(`.history-item[data-id="${id}"]`);
+        if (itemElement) {
+            itemElement.style.opacity = '1';
+            itemElement.style.pointerEvents = 'auto';
+        }
         UI.showStatus(`Failed to delete: ${error.message}`, 'error');
     }
 }
