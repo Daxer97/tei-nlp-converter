@@ -557,9 +557,9 @@ async def home(request: Request):
 @limiter.limit("10 per minute")
 @track_request("POST", "/process")
 async def process_text(
-    request: TextProcessRequest,
+    data: TextProcessRequest,  # ← Renamed from 'request'
     background_tasks: BackgroundTasks,
-    req: Request,
+    request: Request,  # ← Renamed from 'req'
     auth_result = Depends(auth) if settings.require_auth else None
 ):
     """
