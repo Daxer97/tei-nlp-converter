@@ -557,9 +557,9 @@ async def home(request: Request):
 @limiter.limit("10 per minute")
 @track_request("POST", "/process")
 async def process_text(
-    data: TextProcessRequest,  # ← Renamed from 'request'
+    data: TextProcessRequest,  # ← Changed from 'request'
     background_tasks: BackgroundTasks,
-    request: Request,  # ← Renamed from 'req'
+    request: Request,  # ← Changed from 'req'
     auth_result = Depends(auth) if settings.require_auth else None
 ):
     """
@@ -569,8 +569,8 @@ async def process_text(
     - Large texts: Processed in background (returns task_id)
     """
     start_time = datetime.utcnow()
-    request_id = getattr(req.state, "request_id", str(uuid.uuid4()))
-    user_id = getattr(req.state, "user_id", "anonymous")
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    user_id = getattr(request.state, "user_id", "anonymous")
     
     try:
         # Check concurrent task limit
@@ -581,17 +581,17 @@ async def process_text(
             )
         
         # Check if we should process in background
-        if settings.enable_background_tasks and len(request.text) > settings.large_text_threshold:
+        if settings.enable_background_tasks and len(data.text) > settings.large_text_threshold:
             task_id = str(uuid.uuid4())
             
             # Create task in database
             task_manager.create_task(
                 task_id,
                 {
-                    "text_preview": request.text[:100],
-                    "text_length": len(request.text),
-                    "domain": request.domain,
-                    "options": request.options
+                    "text_preview": data.text[:100],
+                    "text_length": len(data.text),
+                    "domain": data.domain,
+                    "options": data.options
                 },
                 request_id
             )
@@ -600,7 +600,7 @@ async def process_text(
             background_tasks.add_task(
                 process_text_background,
                 task_id,
-                request,
+                data,
                 request_id,
                 user_id
             )
@@ -610,12 +610,12 @@ async def process_text(
             return ProcessingResponse(
                 task_id=task_id,
                 status="processing",
-                domain=request.domain,
+                domain=data.domain,
                 request_id=request_id
             )
         
         # Process immediately for small texts
-        result = await process_text_sync(request, request_id, user_id)
+        result = await process_text_sync(data, request_id, user_id)
         
         processing_time = (datetime.utcnow() - start_time).total_seconds()
         
@@ -628,8 +628,8 @@ async def process_text(
             resource_id=str(result.id),
             status_code=200,
             metadata={
-                "domain": request.domain,
-                "text_length": len(request.text),
+                "domain": data.domain,
+                "text_length": len(data.text),
                 "processing_time": processing_time
             }
         )
@@ -666,8 +666,8 @@ async def process_text(
             status_code=500,
             error_message=str(e) if settings.debug else "Processing error",
             metadata={
-                "domain": request.domain,
-                "text_length": len(request.text)
+                "domain": data.domain,
+                "text_length": len(data.text)
             }
         )
         
