@@ -868,6 +868,31 @@ async def download_tei(
         }
     )
 
+@app.get("/text/{text_id}", tags=["Processing"])
+async def get_text(
+    text_id: int,
+    request: Request,
+    auth_result = Depends(auth) if settings.require_auth else None
+):
+    """Get a processed text by ID"""
+    user_id = getattr(request.state, "user_id", "anonymous")
+    
+    text = storage.get_processed_text(text_id)
+    if not text:
+        raise HTTPException(status_code=404, detail="Text not found")
+    
+    # Check ownership if auth enabled
+    if settings.require_auth and text.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    return {
+        "id": text.id,
+        "domain": text.domain,
+        "nlp_results": json.loads(text.nlp_results),
+        "tei_xml": text.tei_xml,
+        "created_at": text.created_at.isoformat()
+    }
+
 @app.get("/task/{task_id}", tags=["Tasks"])
 async def get_task_status(task_id: str, req: Request):
     """Get status of background task"""
