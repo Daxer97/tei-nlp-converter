@@ -51,7 +51,7 @@ class OntologyManager:
                 "domain": "literary",
                 "title": "Literary Analysis",
                 "description": "TEI schema optimized for literary texts and criticism",
-                "annotation_strategy": "mixed",
+                "annotation_strategy": "standoff",
                 "include_pos": True,
                 "include_lemma": True,
                 "include_dependencies": True,
