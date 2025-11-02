@@ -272,11 +272,12 @@ class NLPProcessor:
         raise RuntimeError(error_msg)
 
     def _parse_options(self, options: Optional[Dict[str, Any]]) -> ProcessingOptions:
-        """Parse options dict to ProcessingOptions"""
+        """Parse options dict to ProcessingOptions with provider-aware enhancements"""
         if not options:
-            return ProcessingOptions()
-        
-        return ProcessingOptions(
+            options = {}
+
+        # Start with base options
+        processing_options = ProcessingOptions(
             include_entities=options.get('include_entities', True),
             include_sentences=options.get('include_sentences', True),
             include_tokens=options.get('include_tokens', True),
@@ -288,6 +289,56 @@ class NLPProcessor:
             include_embeddings=options.get('include_embeddings', False),
             language=options.get('language', 'en')
         )
+
+        # Apply provider-specific optimizations
+        processing_options = self._adjust_options_for_provider(processing_options)
+
+        return processing_options
+
+    def _adjust_options_for_provider(self, options: ProcessingOptions) -> ProcessingOptions:
+        """
+        Adjust processing options based on active provider capabilities
+
+        This enables granularity-aware processing:
+        - Google: Enable sentiment analysis and entity-specific features
+        - SpaCy: Enable morphology and dependencies
+        - Remote: Use conservative defaults
+        """
+        # Get the active provider
+        provider = self.registry.get_instance(self.primary_provider)
+
+        if not provider:
+            return options
+
+        capabilities = provider.get_capabilities()
+
+        # Google Cloud NLP specific enhancements
+        if self.primary_provider == 'google':
+            # Enable sentiment analysis (Google-specific strength)
+            if capabilities.sentiment and not options.include_sentiment:
+                options.include_sentiment = True
+                logger.debug("Enabled sentiment analysis for Google Cloud NLP")
+
+            # Disable noun chunks (Google doesn't provide them)
+            if not capabilities.noun_chunks:
+                options.include_noun_chunks = False
+
+        # SpaCy specific optimizations
+        elif self.primary_provider == 'spacy':
+            # Ensure noun chunks are enabled (SpaCy strength)
+            if capabilities.noun_chunks:
+                options.include_noun_chunks = True
+
+        # Remote server - use conservative defaults
+        elif self.primary_provider == 'remote':
+            # Be conservative with remote processing
+            options.include_embeddings = False
+
+        logger.debug(f"Adjusted options for provider {self.primary_provider}: "
+                    f"sentiment={options.include_sentiment}, "
+                    f"noun_chunks={options.include_noun_chunks}")
+
+        return options
     
     def _generate_cache_key(self, text: str, options: ProcessingOptions) -> str:
         """Generate unique cache key"""

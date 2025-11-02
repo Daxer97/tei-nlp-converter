@@ -708,10 +708,18 @@ async def process_text_sync(request: TextProcessRequest, request_id: str, user_i
     
     # Get domain schema
     schema = ontology_manager.get_schema(request.domain)
-    
-    # Convert to TEI XML
+
+    # Detect provider from NLP results metadata
+    provider_name = nlp_results.get('_metadata', {}).get('provider', settings.get('nlp_provider', 'spacy'))
+
+    # Convert to TEI XML with provider-aware optimization
     try:
-        tei_converter = TEIConverter(schema, security_manager)
+        tei_converter = TEIConverter(
+            schema=schema,
+            security_manager=security_manager,
+            provider_name=provider_name,
+            ontology_manager=ontology_manager
+        )
         tei_xml = tei_converter.convert(request.text, nlp_results)
     except Exception as e:
         logger.error(f"TEI conversion failed: {e}")

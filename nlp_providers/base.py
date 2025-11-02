@@ -125,15 +125,28 @@ class NLPProvider(ABC):
             "EVENT": "EVENT",
             "WORK_OF_ART": "WORK_OF_ART",
             "CONSUMER_GOOD": "PRODUCT",
+            "OTHER": "OTHER",
+            "UNKNOWN": "OTHER",
             "NUMBER": "CARDINAL",
             "DATE": "DATE",
+            "TIME": "TIME",
             "PRICE": "MONEY",
             "PHONE_NUMBER": "PHONE",
-            "ADDRESS": "LOC",
+            "ADDRESS": "ADDRESS",
             # SpaCy types (already standard)
             "PER": "PERSON",
             "GPE": "LOC",
+            "FAC": "FAC",
+            "NORP": "NORP",
+            "PRODUCT": "PRODUCT",
+            "LANGUAGE": "LANGUAGE",
+            "LAW": "LAW",
+            "MONEY": "MONEY",
+            "CARDINAL": "CARDINAL",
+            "ORDINAL": "ORDINAL",
+            "QUANTITY": "QUANTITY",
+            "PERCENT": "PERCENT",
             # Add more mappings as needed
         }
-        
+
         return mappings.get(provider_type.upper(), provider_type.upper())
