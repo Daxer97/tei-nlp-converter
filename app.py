@@ -115,8 +115,7 @@ class PersistentTaskManager:
         self.max_concurrent_tasks = settings.get('max_concurrent_tasks', 10)
         self._lock = asyncio.Lock()
     
-    @property
-    async def active_task_count(self) -> int:
+    async def get_active_task_count(self) -> int:
         """Get active task count with caching"""
         async with self._lock:
             # Cache the count for 5 seconds to reduce DB queries
@@ -574,7 +573,7 @@ async def process_text(
     
     try:
         # Check concurrent task limit
-        if await task_manager.active_task_count >= settings.get('max_concurrent_tasks', 10):
+        if await task_manager.get_active_task_count() >= settings.get('max_concurrent_tasks', 10):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Server at capacity, please try again later"
@@ -819,35 +818,62 @@ async def upload_and_process(
     auth_result = Depends(auth) if settings.require_auth else None
 ):
     """Upload a file and process it"""
-    request_id = getattr(req.state, "request_id", str(uuid.uuid4()))
-    
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+
+    # Sanitize filename to prevent path traversal
+    safe_filename = security_manager.sanitize_filename(file.filename)
+
     # Validate file type
-    if not security_manager.validate_file_type(file.filename):
+    if not security_manager.validate_file_type(safe_filename):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid file type. Supported: .txt, .md"
         )
-    
-    # Validate file size (100KB max)
-    if file.size > 102400:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="File too large. Maximum size is 100KB"
-        )
-    
-    # Read file content
+
+    # Validate content-type
+    security_manager.validate_content_type(file.content_type, safe_filename)
+
+    # Sanitize domain to prevent path traversal
+    allowed_domains = ontology_manager.get_available_domains()
+    safe_domain = security_manager.sanitize_domain(domain, allowed_domains)
+
+    # Read file content with size limit
+    max_size = 102400  # 100KB
+    content = b""
+    bytes_read = 0
+
     try:
-        content = await file.read()
+        # Read file in chunks to prevent memory exhaustion
+        chunk_size = 8192
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+
+            bytes_read += len(chunk)
+            if bytes_read > max_size:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"File too large. Maximum size is {max_size // 1024}KB"
+                )
+
+            content += chunk
+
+        # Decode as UTF-8
         text = content.decode('utf-8')
+
     except UnicodeDecodeError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="File must be UTF-8 encoded text"
         )
-    
+    finally:
+        # Ensure file is closed
+        await file.close()
+
     # Process as regular text
-    request = TextProcessRequest(text=text, domain=domain)
-    return await process_text(request, background_tasks, req, auth_result)
+    data = TextProcessRequest(text=text, domain=safe_domain)
+    return await process_text(data, background_tasks, request, auth_result)
 
 @app.get("/download/{text_id}", tags=["Processing"])
 async def download_tei(
@@ -1018,7 +1044,7 @@ async def get_statistics(
     
     stats = storage.get_statistics()
     stats.update({
-        "active_tasks": await task_manager.active_task_count(),
+        "active_tasks": await task_manager.get_active_task_count(),
         "user_texts": storage.count_texts_by_user(user_id),
         "cache": cache_manager.get_stats()
     })
