@@ -141,20 +141,50 @@ class PersistentTaskManager:
                    extra={"request_id": request_id, "task_id": task_id})
         return task
     
-    def update_task(self, task_id: str, status: TaskStatus, 
-                   result: Optional[Dict] = None, error: Optional[str] = None):
-        """Update task status in database with proper error handling"""
+    def update_task(self, task_id: str, status: TaskStatus,
+                   result: Optional[Dict] = None, error: Optional[str] = None,
+                   expected_version: Optional[int] = None):
+        """
+        Update task status in database with atomic metrics updates
+
+        Args:
+            task_id: Task ID to update
+            status: New status
+            result: Task result (optional)
+            error: Error message (optional)
+            expected_version: Expected version for optimistic locking (optional)
+
+        Returns:
+            Updated task or None if failed
+
+        Raises:
+            ValueError: If state transition is invalid or version mismatch
+        """
         try:
-            task = self.storage.update_task(task_id, status, result, error)
-            
-            if status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
+            result_tuple = self.storage.update_task(task_id, status, result, error, expected_version)
+
+            if result_tuple is None:
+                logger.warning(f"Task {task_id} not found for update")
+                return None
+
+            task, should_decrement = result_tuple
+
+            # Only decrement if the storage layer says we should
+            # This prevents race conditions and double-decrementing
+            if should_decrement:
                 active_tasks.dec()
-            
-            logger.info(f"Updated task {task_id} to {status.value}", 
+                logger.debug(f"Decremented active_tasks counter for task {task_id}")
+
+            logger.info(f"Updated task {task_id} to {status.value}",
                        extra={"task_id": task_id, "status": status.value})
             return task
+        except ValueError as e:
+            # State machine validation error or version mismatch
+            logger.warning(f"Task update rejected for {task_id}: {e}",
+                          extra={"task_id": task_id})
+            raise
         except Exception as e:
-            logger.error(f"Failed to update task {task_id}: {e}", 
+            logger.error(f"Failed to update task {task_id}: {e}",
                         extra={"task_id": task_id})
             return None
     
