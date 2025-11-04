@@ -2,11 +2,15 @@
 NLP Connector - Fixed config access issues
 """
 import asyncio
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 import hashlib
 import json
 from nlp_providers.base import NLPProvider, ProcessingOptions, ProviderStatus
 from nlp_providers.registry import get_registry
+from nlp_providers.exceptions import (
+    ProviderError, TransientError, QuotaExceededError,
+    ConfigurationError, FatalError, classify_error, ErrorSeverity
+)
 from cache_manager import CacheManager
 from logger import get_logger
 from config import settings
@@ -224,77 +228,188 @@ class NLPProcessor:
         return True
     
     async def _process_with_fallback(self, text: str, options: ProcessingOptions) -> Dict[str, Any]:
-        """Process with fallback chain and comprehensive error handling"""
+        """
+        Process with intelligent fallback chain and error classification
+
+        Implements retry logic for transient errors and smart fallback based on
+        error severity. Preserves diagnostic information from all failures.
+        """
         provider_chain = [self.primary_provider] + self.fallback_providers
-        last_error = None
+        all_errors: List[Tuple[str, ProviderError]] = []  # (provider_name, error)
         attempted_providers = []
-        
+
+        max_retries_per_provider = 2  # For transient errors
+        retry_delay_base = 0.5  # seconds
+
         for provider_name in provider_chain:
-            try:
-                provider = self.registry.get_instance(provider_name)
-                
-                if not provider:
-                    # Try to create provider on demand
-                    logger.info(f"Creating provider {provider_name} on demand")
-                    config = self._get_provider_config(provider_name)
-                    provider = await self.registry.create_provider(provider_name, config)
-                
-                # Check provider health with timeout
+            retry_count = 0
+
+            while retry_count <= max_retries_per_provider:
                 try:
-                    status = await asyncio.wait_for(
-                        provider.health_check(),
-                        timeout=5.0
+                    provider = self.registry.get_instance(provider_name)
+
+                    if not provider:
+                        # Try to create provider on demand
+                        logger.info(f"Creating provider {provider_name} on demand")
+                        config = self._get_provider_config(provider_name)
+                        provider = await self.registry.create_provider(provider_name, config)
+
+                    # Check provider health with timeout
+                    try:
+                        status = await asyncio.wait_for(
+                            provider.health_check(),
+                            timeout=5.0
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning(f"Health check timeout for provider {provider_name}")
+                        status = ProviderStatus.UNAVAILABLE
+
+                    if status == ProviderStatus.UNAVAILABLE:
+                        error = TransientError(
+                            f"Provider {provider_name} is unavailable",
+                            provider_name=provider_name
+                        )
+                        all_errors.append((provider_name, error))
+                        logger.warning(f"Provider {provider_name} is unavailable, trying next")
+                        break  # Move to next provider
+
+                    # Process with provider
+                    start_time = time.time()
+
+                    # Add timeout for processing
+                    try:
+                        result = await asyncio.wait_for(
+                            provider.process(text, options),
+                            timeout=settings.get('request_timeout', 300)
+                        )
+                    except asyncio.TimeoutError:
+                        raise TransientError(
+                            f"Provider {provider_name} processing timeout",
+                            provider_name=provider_name
+                        )
+
+                    processing_time = time.time() - start_time
+
+                    # Record metrics
+                    nlp_processing_duration.labels(source=provider_name).observe(processing_time)
+
+                    # Add processing metadata
+                    result["_metadata"] = {
+                        "provider": provider.get_name(),
+                        "processing_time": processing_time,
+                        "fallback_used": provider_name != self.primary_provider,
+                        "attempted_providers": attempted_providers,
+                        "retry_count": retry_count,
+                        "errors_encountered": len(all_errors)
+                    }
+
+                    logger.info(
+                        f"Successfully processed text with provider: {provider.get_name()} "
+                        f"(retry: {retry_count}, fallbacks: {len(attempted_providers)})"
                     )
-                except asyncio.TimeoutError:
-                    logger.warning(f"Health check timeout for provider {provider_name}")
-                    status = ProviderStatus.UNAVAILABLE
-                
-                if status == ProviderStatus.UNAVAILABLE:
-                    logger.warning(f"Provider {provider_name} is unavailable, trying next")
-                    attempted_providers.append(provider_name)
-                    continue
-                
-                # Process with provider
-                start_time = time.time()
-                
-                # Add timeout for processing
-                try:
-                    result = await asyncio.wait_for(
-                        provider.process(text, options),
-                        timeout=settings.get('request_timeout', 300)
+                    return result
+
+                except ProviderError as e:
+                    # Already classified error
+                    all_errors.append((provider_name, e))
+                    logger.warning(
+                        f"Provider {provider_name} failed with {e.severity.value} error: {e.message}"
                     )
-                except asyncio.TimeoutError:
-                    raise TimeoutError(f"Provider {provider_name} processing timeout")
-                
-                processing_time = time.time() - start_time
-                
-                # Record metrics
-                nlp_processing_duration.labels(source=provider_name).observe(processing_time)
-                
-                # Add processing metadata
-                result["_metadata"] = {
-                    "provider": provider.get_name(),
-                    "processing_time": processing_time,
-                    "fallback_used": provider_name != self.primary_provider,
-                    "attempted_providers": attempted_providers
-                }
-                
-                logger.info(f"Successfully processed text with provider: {provider.get_name()}")
-                return result
-                
-            except Exception as e:
-                last_error = e
+
+                    # Handle based on error classification
+                    if e.is_retryable and retry_count < max_retries_per_provider:
+                        # Retry with exponential backoff
+                        retry_count += 1
+                        delay = retry_delay_base * (2 ** (retry_count - 1))
+                        logger.info(f"Retrying provider {provider_name} after {delay}s (attempt {retry_count + 1})")
+                        await asyncio.sleep(delay)
+                        continue
+                    elif e.requires_fallback:
+                        # Move to next provider immediately
+                        logger.info(f"Switching to fallback provider due to {e.severity.value} error")
+                        break
+                    else:
+                        # Fatal error, stop trying
+                        break
+
+                except Exception as e:
+                    # Unclassified error - classify it
+                    classified_error = classify_error(e, provider_name=provider_name)
+                    all_errors.append((provider_name, classified_error))
+                    logger.warning(
+                        f"Provider {provider_name} failed: {e} "
+                        f"(classified as {classified_error.severity.value})"
+                    )
+
+                    # Handle based on classification
+                    if classified_error.is_retryable and retry_count < max_retries_per_provider:
+                        retry_count += 1
+                        delay = retry_delay_base * (2 ** (retry_count - 1))
+                        logger.info(f"Retrying provider {provider_name} after {delay}s")
+                        await asyncio.sleep(delay)
+                        continue
+                    else:
+                        break
+
+            # Track that we attempted this provider
+            if provider_name not in attempted_providers:
                 attempted_providers.append(provider_name)
-                logger.warning(f"Provider {provider_name} failed: {e}")
-                
-                if provider_name != provider_chain[-1]:
-                    logger.info(f"Falling back to next provider")
-                    continue
-        
-        # All providers failed
-        error_msg = f"All NLP providers failed. Last error: {last_error}. Attempted: {attempted_providers}"
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
+
+        # All providers failed - create comprehensive error message
+        error_summary = self._create_failure_summary(all_errors, attempted_providers)
+        logger.error(error_summary)
+        raise RuntimeError(error_summary)
+
+    def _create_failure_summary(
+        self,
+        all_errors: List[Tuple[str, ProviderError]],
+        attempted_providers: List[str]
+    ) -> str:
+        """
+        Create comprehensive error summary preserving diagnostic information
+
+        Args:
+            all_errors: List of (provider_name, error) tuples
+            attempted_providers: List of provider names attempted
+
+        Returns:
+            Formatted error message with all diagnostic information
+        """
+        lines = [
+            f"All NLP providers failed. Attempted {len(attempted_providers)} providers.",
+            "",
+            "Error Details:"
+        ]
+
+        # Group errors by provider
+        by_provider: Dict[str, List[ProviderError]] = {}
+        for provider_name, error in all_errors:
+            if provider_name not in by_provider:
+                by_provider[provider_name] = []
+            by_provider[provider_name].append(error)
+
+        # Format errors for each provider
+        for provider_name in attempted_providers:
+            errors = by_provider.get(provider_name, [])
+            lines.append(f"  - {provider_name}: {len(errors)} error(s)")
+
+            for i, error in enumerate(errors, 1):
+                lines.append(
+                    f"    {i}. [{error.severity.value.upper()}] {error.message}"
+                )
+
+        # Add summary statistics
+        severity_counts = {}
+        for _, error in all_errors:
+            severity = error.severity.value
+            severity_counts[severity] = severity_counts.get(severity, 0) + 1
+
+        lines.append("")
+        lines.append("Error Classification:")
+        for severity, count in sorted(severity_counts.items()):
+            lines.append(f"  - {severity}: {count}")
+
+        return "\n".join(lines)
 
     def _parse_options(self, options: Optional[Dict[str, Any]]) -> ProcessingOptions:
         """Parse options dict to ProcessingOptions with provider-aware enhancements"""
