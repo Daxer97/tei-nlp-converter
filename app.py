@@ -30,21 +30,26 @@ from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 # Internal imports
 from config import settings
 from security import SecurityManager, APIKeyAuth
+from cache_manager import CacheManager
+from nlp_connector import NLPProcessor
 from tei_converter import TEIConverter
+from ontology_manager import OntologyManager
 from storage import Storage, ProcessedText, TaskStatus, BackgroundTask
 from logger import get_logger
 from middleware import (
-    RequestIDMiddleware,
-    CSRFProtectionMiddleware,
+    RequestIDMiddleware, 
+    CSRFProtectionMiddleware, 
     AuditLoggingMiddleware,
     generate_csrf_token
 )
+from metrics import (
+    track_request, 
+    active_tasks, 
+    cache_hits, 
+    cache_misses,
+    get_metrics
+)
 from circuit_breaker import CircuitBreaker, CircuitBreakerError
-
-# New pipeline architecture
-from pipeline.pipeline import Pipeline, PipelineConfig, PipelineResult
-from monitoring.metrics import MetricsCollector
-from knowledge_bases.cache import MultiTierCacheManager
 
 # Initialize logger with request context
 logger = get_logger(__name__)
@@ -52,18 +57,14 @@ logger = get_logger(__name__)
 # Initialize components with proper error handling and validation
 try:
     security_manager = SecurityManager(settings.get('secret_key'))
-    storage = Storage(settings.get('database_url'))
-    auth = APIKeyAuth(settings.get('api_key')) if settings.get('require_auth') else None
-
-    # Initialize new monitoring system
-    metrics_collector = MetricsCollector()
-
-    # Initialize multi-tier cache for knowledge bases
-    cache_manager = MultiTierCacheManager(
+    cache_manager = CacheManager(
         redis_url=settings.get('redis_url'),
-        postgres_url=settings.get('database_url'),
-        l1_maxsize=settings.get('max_cache_size', 10000)
+        ttl=settings.get('cache_ttl', 3600),
+        max_memory_cache=settings.get('max_cache_size', 10000)
     )
+    storage = Storage(settings.get('database_url'))
+    ontology_manager = OntologyManager()
+    auth = APIKeyAuth(settings.get('api_key')) if settings.get('require_auth') else None
 except Exception as e:
     logger.critical(f"Failed to initialize core components: {e}")
     raise
@@ -81,27 +82,27 @@ limiter = Limiter(
     default_limits=[f"{settings.get('rate_limit_per_minute', 100)} per minute"]
 )
 
-# Lazy initialization for Pipeline with proper cleanup
-_pipeline = None
-_pipeline_lock = asyncio.Lock()
+# Lazy initialization for NLP processor with proper cleanup
+_nlp_processor = None
+_nlp_lock = asyncio.Lock()
 
-async def get_pipeline() -> Pipeline:
-    """Get or initialize the processing pipeline with thread safety"""
-    global _pipeline
-
-    if _pipeline is None:
-        async with _pipeline_lock:
-            if _pipeline is None:  # Double-check pattern
-                # Create pipeline configuration
-                config = PipelineConfig()
-                # TODO: Load from YAML config file if available
-                # config = PipelineConfig.from_yaml(Path("config/pipeline/default.yaml"))
-
-                _pipeline = Pipeline(config)
-                await _pipeline.initialize()
-                logger.info("Processing pipeline initialized successfully")
-
-    return _pipeline
+async def get_nlp_processor() -> NLPProcessor:
+    """Get or initialize the NLP processor with thread safety"""
+    global _nlp_processor
+    
+    if _nlp_processor is None:
+        async with _nlp_lock:
+            if _nlp_processor is None:  # Double-check pattern
+                _nlp_processor = NLPProcessor(
+                    primary_provider=settings.get('nlp_provider', 'spacy'),
+                    fallback_providers=settings.get('nlp_fallback_providers', ['spacy']),
+                    cache_manager=cache_manager
+                )
+                # Initialize providers asynchronously
+                await _nlp_processor.initialize_providers()
+                logger.info(f"NLP processor initialized with provider: {settings.get('nlp_provider')}")
+    
+    return _nlp_processor
 
 # Enhanced Background task management with persistence and recovery
 class PersistentTaskManager:
@@ -135,8 +136,8 @@ class PersistentTaskManager:
             raise ValueError("Task data must be a dictionary")
         
         task = self.storage.create_task(task_id, data, request_id)
-        metrics_collector.increment_counter("background_tasks_created")
-        logger.info(f"Created task {task_id} with request {request_id}",
+        active_tasks.inc()
+        logger.info(f"Created task {task_id} with request {request_id}", 
                    extra={"request_id": request_id, "task_id": task_id})
         return task
     
@@ -171,8 +172,8 @@ class PersistentTaskManager:
             # Only decrement if the storage layer says we should
             # This prevents race conditions and double-decrementing
             if should_decrement:
-                metrics_collector.increment_counter("background_tasks_completed")
-                logger.debug(f"Incremented completed tasks counter for task {task_id}")
+                active_tasks.dec()
+                logger.debug(f"Decremented active_tasks counter for task {task_id}")
 
             logger.info(f"Updated task {task_id} to {status.value}",
                        extra={"task_id": task_id, "status": status.value})
@@ -549,11 +550,10 @@ async def health_check():
 @app.get("/metrics", tags=["System"])
 async def metrics():
     """Prometheus metrics endpoint"""
-    if not settings.get('enable_metrics', True):
+    if not settings.enable_metrics:
         raise HTTPException(status_code=404)
-
-    # Use Prometheus native metrics
-    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    
+    return Response(content=get_metrics(), media_type=CONTENT_TYPE_LATEST)
 
 @app.get("/", response_class=HTMLResponse, tags=["UI"])
 async def home(request: Request):
@@ -584,6 +584,7 @@ async def home(request: Request):
 
 @app.post("/process", response_model=ProcessingResponse, tags=["Processing"])
 @limiter.limit("10 per minute")
+@track_request("POST", "/process")
 async def process_text(
     data: TextProcessRequest,  # ← Changed from 'request'
     background_tasks: BackgroundTasks,
@@ -718,71 +719,43 @@ async def process_text_sync(request: TextProcessRequest, request_id: str, user_i
     """
     # Check cache first
     cache_key = f"processed:{security_manager.hash_text(request.text)}:{request.domain}"
-    cached = await cache_manager.get(cache_key)
+    cached = cache_manager.get(cache_key)
     if cached:
         logger.info(f"Cache hit for request {request_id}")
-        metrics_collector.record_cache_hit("text_processing")
+        cache_hits.inc()
         return cached
 
-    metrics_collector.record_cache_miss("text_processing")
+    cache_misses.inc()
 
-    # Process with Pipeline - use lazy-loaded pipeline
-    pipeline = await get_pipeline()
+    # Process with NLP - use lazy-loaded processor
+    nlp_processor = await get_nlp_processor()
     try:
-        pipeline_result: PipelineResult = await pipeline.process(request.text, domain=request.domain)
-
-        # Convert pipeline result to legacy NLP results format for compatibility
-        nlp_results = {
-            "text": request.text,
-            "entities": [
-                {
-                    "text": entity.text,
-                    "type": entity.type,
-                    "start": entity.start,
-                    "end": entity.end,
-                    "confidence": entity.confidence,
-                    "kb_id": entity.kb_id,
-                    "kb_entity_id": entity.kb_entity_id,
-                    "canonical_name": entity.canonical_name,
-                    "definition": entity.definition,
-                    "semantic_types": entity.semantic_types,
-                    "metadata": entity.metadata
-                }
-                for entity in pipeline_result.entities
-            ],
-            "performance": {
-                "total_time_ms": pipeline_result.total_time_ms,
-                "ner_time_ms": pipeline_result.ner_time_ms,
-                "kb_time_ms": pipeline_result.kb_time_ms,
-                "pattern_time_ms": pipeline_result.pattern_time_ms
-            },
-            "models_used": pipeline_result.models_used,
-            "kbs_used": pipeline_result.kbs_used,
-            "_metadata": {
-                "pipeline": "new_architecture",
-                "stages_completed": [stage.value for stage in pipeline_result.stages_completed]
-            }
-        }
-
+        nlp_results = await nlp_processor.process(request.text, request.options)
     except Exception as e:
-        logger.error(f"Pipeline processing failed: {e}")
+        logger.error(f"NLP processing failed: {e}")
         # Fallback to basic processing
         nlp_results = {
-            "text": request.text,
+            "sentences": [{"text": request.text, "tokens": []}],
             "entities": [],
-            "performance": {},
-            "processing_note": "Simplified processing due to service error",
-            "error": str(e)
+            "dependencies": [],
+            "noun_chunks": [],
+            "text": request.text,
+            "processing_note": "Simplified processing due to service error"
         }
 
-    # Convert to TEI XML
-    try:
-        # Create a simple schema for the domain
-        schema = {"domain": request.domain}  # Simplified schema
+    # Get domain schema
+    schema = ontology_manager.get_schema(request.domain)
 
+    # Detect provider from NLP results metadata
+    provider_name = nlp_results.get('_metadata', {}).get('provider', settings.get('nlp_provider', 'spacy'))
+
+    # Convert to TEI XML with provider-aware optimization
+    try:
         tei_converter = TEIConverter(
             schema=schema,
-            security_manager=security_manager
+            security_manager=security_manager,
+            provider_name=provider_name,
+            ontology_manager=ontology_manager
         )
         tei_xml = tei_converter.convert(request.text, nlp_results)
     except Exception as e:
@@ -829,7 +802,7 @@ async def process_text_sync(request: TextProcessRequest, request_id: str, user_i
     # Only cache after successful database commit
     # Cache failures should NOT fail the request - cache is supplementary
     try:
-        await cache_manager.set(cache_key, processed_text, ttl=settings.get('cache_ttl', 3600))
+        cache_manager.set(cache_key, processed_text, ttl=settings.cache_ttl)
         logger.debug(f"Cached result for request {request_id}")
     except Exception as e:
         # Log but don't fail - cache is best-effort
@@ -1038,12 +1011,14 @@ async def get_task_status(task_id: str, req: Request):
 
 @app.get("/domains", tags=["Configuration"])
 async def get_domains():
-    """Get available processing domains"""
-    # Return supported domains from the new pipeline architecture
-    domains = ["medical", "legal", "general"]
+    """Get available ontological domains with details"""
+    domains = ontology_manager.get_available_domains()
     return {
         "domains": domains,
-        "description": "Supported domains for NLP processing with domain-specific knowledge bases and pattern matching"
+        "schemas": {
+            domain: ontology_manager.get_schema_info(domain)
+            for domain in domains
+        }
     }
 
 @app.get("/history", tags=["History"])
