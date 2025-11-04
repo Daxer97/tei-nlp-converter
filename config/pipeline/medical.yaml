@@ -1,0 +1,94 @@
+#
+# Medical Domain Pipeline Configuration
+#
+# This configuration optimizes the pipeline for medical text processing.
+#
+
+# Processing stages to enable
+enabled_stages:
+  - "ner"
+  - "kb_enrichment"
+  - "pattern_matching"
+  - "post_processing"
+
+# NER Configuration
+ner_model_ids:
+  - "en_ner_bc5cdr_md"          # SciSpacy model for diseases and chemicals
+  - "en_ner_bionlp13cg_md"      # SciSpacy model for biomedical entities
+  - "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext"  # BioBERT
+
+ner_ensemble_mode: true          # Use ensemble for better accuracy
+ner_min_confidence: 0.6          # Minimum confidence for NER entities
+
+# Knowledge Base Configuration
+kb_ids:
+  - "umls"                       # UMLS for comprehensive medical concepts
+  - "rxnorm"                     # RxNorm for drug normalization
+
+kb_enrich_all: false             # Only enrich high-confidence entities
+kb_min_confidence_for_enrichment: 0.7
+
+# Pattern Matching Configuration
+pattern_domains:
+  - "medical"
+
+pattern_auto_detect_domain: false  # Medical text is domain-specific
+pattern_min_confidence: 0.6
+
+# Post-processing Configuration
+deduplication_enabled: true
+deduplication_threshold: 0.8     # IoU threshold for duplicates
+merge_overlapping: true          # Merge overlapping entities
+
+# Performance Tuning
+parallel_processing: true
+max_concurrent_kb_lookups: 10    # Limit concurrent KB API calls
+timeout_seconds: 30.0
+
+# Trust and Security
+enable_trust_validation: true
+
+trust_policy:
+  # Minimum trust levels
+  min_model_trust_level: "verified"
+  min_kb_trust_level: "verified"
+
+  # Model requirements
+  require_model_checksum: true
+  require_model_signature: false
+  require_malware_scan: true
+
+  # KB requirements
+  require_kb_https: true
+  require_kb_api_key: false
+  prefer_authoritative_sources: true
+
+  # Trust score thresholds
+  min_reputation_score: 3.0
+  min_quality_score: 0.7
+
+# Optimization
+optimization_strategy: "balanced"  # Options: latency, accuracy, throughput, balanced, cost
+
+# A/B Testing
+ab_testing_enabled: false
+ab_test_traffic_split: 0.5
+
+# Monitoring
+metrics_enabled: true
+metrics_export_interval_seconds: 60
+
+# Caching
+cache_enabled: true
+cache_ttl_seconds: 3600          # 1 hour
+
+# Fallbacks
+enable_fallbacks: true
+fallback_chain:
+  ner_models:
+    - "en_ner_bc5cdr_md"
+    - "en_core_sci_sm"
+  kbs:
+    - "umls"
+    - "rxnorm"
+    - "snomed"
