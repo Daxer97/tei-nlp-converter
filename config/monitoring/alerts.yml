@@ -1,0 +1,121 @@
+#
+# Alert Rules for NLP Pipeline
+#
+# Defines alerting rules for various pipeline issues.
+#
+
+groups:
+  - name: nlp_pipeline_alerts
+    interval: 30s
+    rules:
+      # High error rate
+      - alert: HighErrorRate
+        expr: |
+          rate(http_requests_errors_total[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      # Very high error rate
+      - alert: CriticalErrorRate
+        expr: |
+          rate(http_requests_errors_total[5m]) / rate(http_requests_total[5m]) > 0.20
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 20%)"
+
+      # High latency
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95, rate(http_request_duration_ms_bucket[5m])) > 1000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High request latency detected"
+          description: "P95 latency is {{ $value }}ms (threshold: 1000ms)"
+
+      # Pipeline stage failures
+      - alert: PipelineStageFailures
+        expr: |
+          rate(pipeline_stage_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pipeline stage failures detected"
+          description: "Stage {{ $labels.stage }} is failing at {{ $value }} errors/sec"
+
+      # Hot-swap failures
+      - alert: HotSwapFailures
+        expr: |
+          rate(hot_swaps_total{status="failure"}[10m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Hot-swap operation failures"
+          description: "Component {{ $labels.component_id }} failed to hot-swap"
+
+      # KB cache low hit rate
+      - alert: LowKBCacheHitRate
+        expr: |
+          rate(kb_cache_lookups_total{status="hit"}[10m]) /
+          rate(kb_cache_lookups_total[10m]) < 0.50
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "Low KB cache hit rate"
+          description: "KB {{ $labels.kb_id }} cache hit rate is {{ $value | humanizePercentage }} (threshold: 50%)"
+
+      # Component unhealthy
+      - alert: ComponentUnhealthy
+        expr: |
+          component_health_status{status="unhealthy"} == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Component is unhealthy"
+          description: "Component {{ $labels.component_name }} is unhealthy"
+
+      # Database connection issues
+      - alert: DatabaseConnectionIssues
+        expr: |
+          component_health_status{component_name="database",status="unhealthy"} == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database connection issues"
+          description: "Cannot connect to database"
+
+      # Low throughput
+      - alert: LowThroughput
+        expr: |
+          rate(http_requests_total[5m]) < 0.1
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Low request throughput"
+          description: "Request rate is {{ $value }} req/sec (threshold: 0.1 req/sec)"
+
+      # Model performance degradation
+      - alert: ModelPerformanceDegradation
+        expr: |
+          histogram_quantile(0.95, rate(model_prediction_duration_ms_bucket[10m])) >
+          2 * histogram_quantile(0.95, rate(model_prediction_duration_ms_bucket[1h] offset 1h))
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Model performance degraded"
+          description: "Model {{ $labels.model_id }} latency increased significantly"

@@ -1,0 +1,101 @@
+# Medical Knowledge Bases Configuration
+#
+# This file configures medical knowledge bases for entity enrichment
+
+knowledge_bases:
+  # UMLS (Unified Medical Language System)
+  umls:
+    enabled: true
+    provider: "UMLSProvider"
+    api_key: "${UMLS_API_KEY}"  # Set via environment variable
+    priority: 1  # Higher priority KBs checked first
+    cache_strategy: "aggressive"  # aggressive, moderate, minimal
+    sync_config:
+      enabled: true
+      frequency: "quarterly"  # UMLS updates quarterly
+      incremental: true
+      batch_size: 1000
+    entity_types:
+      - DISEASE
+      - DRUG
+      - MEDICATION
+      - PROCEDURE
+      - ANATOMY
+      - CLINICAL_FINDING
+      - LABORATORY_TEST
+      - CHEMICAL
+
+  # RxNorm (Drug Normalization)
+  rxnorm:
+    enabled: true
+    provider: "RxNormProvider"
+    api_key: null  # No API key required
+    priority: 2
+    cache_strategy: "aggressive"
+    sync_config:
+      enabled: true
+      frequency: "monthly"  # RxNorm updates monthly
+      incremental: true
+      batch_size: 1000
+    entity_types:
+      - DRUG
+      - MEDICATION
+      - INGREDIENT
+      - BRAND_NAME
+
+  # SNOMED CT (Clinical Terminology)
+  snomed:
+    enabled: false  # Enable if you have SNOMED license
+    provider: "SNOMEDProvider"
+    api_key: "${SNOMED_API_KEY}"
+    priority: 3
+    cache_strategy: "moderate"
+    sync_config:
+      enabled: true
+      frequency: "quarterly"
+      incremental: true
+      batch_size: 500
+    entity_types:
+      - DISEASE
+      - PROCEDURE
+      - FINDING
+      - ANATOMY
+
+# Fallback chain for entity lookups
+# System will try each KB in order until entity is found
+fallback_chain:
+  - umls
+  - rxnorm
+  - snomed
+
+# Cache configuration
+cache:
+  memory:
+    max_entities: 10000
+    eviction_policy: "lru"
+
+  redis:
+    enabled: true
+    url: "${REDIS_URL}"
+    ttl_seconds: 3600  # 1 hour
+    connection_pool_size: 50
+
+  postgres:
+    enabled: true
+    url: "${DATABASE_URL}"
+    enable_fulltext_search: true
+
+# Performance tuning
+performance:
+  max_concurrent_lookups: 10
+  lookup_timeout_seconds: 5
+  retry_failed_lookups: true
+  max_retries: 3
+  retry_backoff_seconds: 1
+
+# Logging
+logging:
+  level: "INFO"
+  log_lookups: true
+  log_cache_hits: true
+  log_sync_progress: true

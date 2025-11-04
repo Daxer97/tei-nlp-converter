@@ -1,0 +1,250 @@
+{
+  "dashboard": {
+    "title": "NLP Pipeline Monitoring",
+    "tags": ["nlp", "pipeline", "monitoring"],
+    "timezone": "browser",
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Request Rate",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "legendFormat": "{{endpoint}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"label": "Requests/sec", "format": "short"},
+          {"label": null, "format": "short"}
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Request Latency (P95)",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_ms_bucket[5m]))",
+            "legendFormat": "{{endpoint}} P95",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(http_request_duration_ms_bucket[5m]))",
+            "legendFormat": "{{endpoint}} P50",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"label": "Latency (ms)", "format": "ms"},
+          {"label": null, "format": "short"}
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Error Rate",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(http_requests_errors_total[5m]) / rate(http_requests_total[5m])",
+            "legendFormat": "{{endpoint}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"label": "Error Rate", "format": "percentunit"},
+          {"label": null, "format": "short"}
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {"params": [0.05], "type": "gt"},
+              "query": {"params": ["A", "5m", "now"]},
+              "type": "query"
+            }
+          ],
+          "name": "High Error Rate",
+          "message": "Error rate exceeded 5%"
+        }
+      },
+      {
+        "id": 4,
+        "title": "Pipeline Stage Duration",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(pipeline_stage_duration_ms_bucket[5m]))",
+            "legendFormat": "{{stage}} P95",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"label": "Duration (ms)", "format": "ms"},
+          {"label": null, "format": "short"}
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Entities Extracted per Stage",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(pipeline_entities_extracted_sum[5m]) / rate(pipeline_entities_extracted_count[5m])",
+            "legendFormat": "{{stage}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"label": "Entities/Request", "format": "short"},
+          {"label": null, "format": "short"}
+        ]
+      },
+      {
+        "id": 6,
+        "title": "KB Cache Hit Rate",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(kb_cache_lookups_total{status=\"hit\"}[5m]) / rate(kb_cache_lookups_total[5m])",
+            "legendFormat": "{{kb_id}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"label": "Cache Hit Rate", "format": "percentunit"},
+          {"label": null, "format": "short"}
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Model Prediction Duration",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(model_prediction_duration_ms_bucket[5m]))",
+            "legendFormat": "{{model_id}} P95",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"label": "Duration (ms)", "format": "ms"},
+          {"label": null, "format": "short"}
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Component Health Status",
+        "type": "stat",
+        "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "component_health_status",
+            "legendFormat": "{{component_name}}: {{status}}",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "values": true,
+            "calcs": ["lastNotNull"]
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "green"},
+                {"value": 0.5, "color": "yellow"},
+                {"value": 0.8, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 9,
+        "title": "Hot-Swap Operations",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 32, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(hot_swaps_total[10m])",
+            "legendFormat": "{{component_type}}: {{status}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"label": "Swaps/sec", "format": "short"},
+          {"label": null, "format": "short"}
+        ]
+      },
+      {
+        "id": 10,
+        "title": "System Resource Usage",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 32, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "process_cpu_seconds_total",
+            "legendFormat": "CPU",
+            "refId": "A"
+          },
+          {
+            "expr": "process_resident_memory_bytes",
+            "legendFormat": "Memory",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"label": "Usage", "format": "short"},
+          {"label": null, "format": "bytes"}
+        ]
+      }
+    ],
+    "annotations": {
+      "list": [
+        {
+          "builtIn": 1,
+          "datasource": "-- Grafana --",
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "type": "dashboard"
+        }
+      ]
+    },
+    "editable": true,
+    "gnetId": null,
+    "graphTooltip": 1,
+    "links": [],
+    "panels": [],
+    "schemaVersion": 27,
+    "style": "dark",
+    "templating": {
+      "list": []
+    },
+    "timepicker": {},
+    "version": 0
+  },
+  "folderId": 0,
+  "overwrite": true
+}
