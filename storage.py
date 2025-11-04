@@ -140,11 +140,11 @@ class Storage:
         """Initialize storage with enhanced connection pooling and thread safety"""
         self.db_url = db_url or settings.get('database_url')
         self._lock = threading.RLock()  # Reentrant lock for thread safety
-        
+
         # Determine if we're using PostgreSQL or SQLite
         self.is_postgresql = 'postgresql' in self.db_url
         self.is_sqlite = 'sqlite' in self.db_url
-        
+
         # PostgreSQL optimized settings
         if self.is_postgresql:
             pool_class = QueuePool
@@ -152,9 +152,37 @@ class Storage:
                 "connect_timeout": 10,
                 "options": "-c statement_timeout=30000"  # 30 second statement timeout
             }
-            pool_size = settings.get('database_pool_size', 20)
-            max_overflow = settings.get('database_max_overflow', 40)
-            pool_recycle = settings.get('database_pool_recycle', 3600)
+
+            # Calculate pool size based on worker count to avoid connection exhaustion
+            # With multiple uvicorn workers, each worker gets its own pool
+            # Total connections = workers × (pool_size + max_overflow)
+            # Must stay under PostgreSQL max_connections (typically 100)
+            workers = settings.get('workers', 4)
+            per_worker_pool = settings.get('database_pool_size', 5)  # Conservative: 5 per worker
+            per_worker_overflow = settings.get('database_max_overflow', 5)  # Emergency overflow
+
+            # Log the configuration for debugging
+            total_connections = workers * (per_worker_pool + per_worker_overflow)
+            logger.info(
+                f"Database pool configured: {workers} workers × "
+                f"({per_worker_pool} pool + {per_worker_overflow} overflow) = "
+                f"{total_connections} max total connections"
+            )
+
+            if total_connections > 80:
+                logger.warning(
+                    f"Total database connections ({total_connections}) may exceed "
+                    f"PostgreSQL max_connections limit (typically 100). "
+                    f"Consider reducing pool size or worker count."
+                )
+
+            pool_size = per_worker_pool
+            max_overflow = per_worker_overflow
+
+            # Recycle connections after 30 minutes to avoid stale connections
+            # This is important for long-lived processes
+            pool_recycle = settings.get('database_pool_recycle', 1800)  # 30 minutes
+
         else:
             # SQLite settings
             pool_class = NullPool  # No pooling for SQLite
@@ -165,14 +193,14 @@ class Storage:
             pool_size = 1
             max_overflow = 0
             pool_recycle = -1
-        
+
         self.engine = create_engine(
             self.db_url,
-            poolclass=pool_class,    # ✅ correct
+            poolclass=pool_class,
             pool_size=pool_size,
             max_overflow=max_overflow,
             pool_recycle=pool_recycle,
-            pool_pre_ping=True,
+            pool_pre_ping=False,  # Disabled to reduce overhead - use pessimistic disconnect handling
             echo=settings.get('debug', False),
             connect_args=connect_args
         )
