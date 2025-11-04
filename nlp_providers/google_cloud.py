@@ -293,15 +293,24 @@ class GoogleCloudNLPProvider(NLPProvider):
                     logger.error(f"Invalid syntax analysis request: {e}")
                     # Continue with other analyses if syntax fails
             
-            # Analyze entities
+            # Analyze entities with sentiment (Google-specific feature)
             if options.include_entities:
                 try:
-                    entity_response = self.client.analyze_entities(
-                        request={
-                            "document": document,
-                            "encoding_type": encoding_type
-                        }
-                    )
+                    # Use entity sentiment analysis for richer entity information
+                    if self.capabilities.entity_sentiment:
+                        entity_response = self.client.analyze_entity_sentiment(
+                            request={
+                                "document": document,
+                                "encoding_type": encoding_type
+                            }
+                        )
+                    else:
+                        entity_response = self.client.analyze_entities(
+                            request={
+                                "document": document,
+                                "encoding_type": encoding_type
+                            }
+                        )
                     result["entities"] = self._process_entities(entity_response)
                 except InvalidArgument as e:
                     logger.error(f"Invalid entity analysis request: {e}")
@@ -439,28 +448,54 @@ class GoogleCloudNLPProvider(NLPProvider):
         return tokens_data
     
     def _process_entities(self, response) -> List[Dict[str, Any]]:
-        """Process entities from Google Cloud NLP response"""
+        """Process entities from Google Cloud NLP response with full Google-specific features"""
         entities = []
-        
+
         for entity in response.entities:
             # Get entity span from mentions
             for mention in entity.mentions:
-                entities.append({
+                entity_data = {
                     "text": mention.text.content,
                     "label": self.normalize_entity_type(entity.type_.name),
                     "start_char": mention.text.begin_offset,
                     "end_char": mention.text.begin_offset + len(mention.text.content),
-                    "salience": entity.salience,
-                    "sentiment": {
-                        "score": mention.sentiment.score,
-                        "magnitude": mention.sentiment.magnitude
-                    } if hasattr(mention, 'sentiment') else None,
-                    "metadata": {
-                        "wikipedia_url": entity.metadata.get("wikipedia_url"),
-                        "mid": entity.metadata.get("mid")
-                    } if entity.metadata else None
-                })
-        
+                    # Google-specific: Salience (importance) score
+                    "salience": float(entity.salience),
+                    # Google-specific: Mention type (PROPER, COMMON, etc.)
+                    "mention_type": mention.type_.name if hasattr(mention, 'type_') else None,
+                }
+
+                # Google-specific: Entity sentiment (emotional context)
+                if hasattr(mention, 'sentiment') and mention.sentiment:
+                    entity_data["sentiment"] = {
+                        "score": float(mention.sentiment.score),
+                        "magnitude": float(mention.sentiment.magnitude)
+                    }
+                elif hasattr(entity, 'sentiment') and entity.sentiment:
+                    # Fallback to entity-level sentiment
+                    entity_data["sentiment"] = {
+                        "score": float(entity.sentiment.score),
+                        "magnitude": float(entity.sentiment.magnitude)
+                    }
+
+                # Google-specific: Knowledge Graph metadata
+                if entity.metadata:
+                    metadata = {}
+                    if entity.metadata.get("wikipedia_url"):
+                        metadata["wikipedia_url"] = entity.metadata.get("wikipedia_url")
+                    if entity.metadata.get("mid"):
+                        metadata["knowledge_graph_mid"] = entity.metadata.get("mid")
+                    if metadata:
+                        entity_data["metadata"] = metadata
+
+                # Provider identification
+                entity_data["provider"] = "google"
+
+                entities.append(entity_data)
+
+        # Sort entities by salience (importance) for Google results
+        entities.sort(key=lambda x: x.get("salience", 0), reverse=True)
+
         return entities
     
     def _process_sentiment(self, response) -> Dict[str, Any]:

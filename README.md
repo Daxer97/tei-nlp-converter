@@ -1,5 +1,45 @@
 # TEI NLP Converter - Proxmox Container Deployment Guide
 
+## Overview
+
+The TEI NLP Converter is a production-ready application that processes natural language text and converts it to TEI XML format with domain-specific schemas. The application features a **multi-provider NLP architecture** with intelligent fallback and provider-specific optimizations.
+
+### Key Features
+
+- **Multi-Provider NLP Architecture**
+  - **Google Cloud NLP**: Advanced entity analysis with salience, sentiment, and Knowledge Graph integration
+  - **SpaCy (Local)**: Fast, privacy-focused processing with rich morphological features
+  - **Remote NLP Server**: Extensible support for custom NLP services
+  - **Intelligent Fallback**: Automatic failover between providers
+
+- **Provider-Specific Optimizations**
+  - Dynamic entity mapping based on provider capabilities
+  - Granularity-aware processing options
+  - Google-specific features: entity salience, sentiment, Knowledge Graph MIDs
+  - SpaCy-specific features: detailed morphology, dependency parsing
+
+- **Domain-Specific TEI Schemas**
+  - Pre-configured schemas for 10+ domains (legal, scientific, literary, etc.)
+  - Provider-aware entity-to-TEI mappings
+  - Customizable annotation strategies (inline, standoff, mixed)
+
+- **Production-Ready Infrastructure**
+  - Comprehensive caching with Redis
+  - Database persistence with SQLAlchemy
+  - Rate limiting and security features
+  - Prometheus metrics and health monitoring
+  - Background task processing
+
+### NLP Provider Setup
+
+For **Google Cloud NLP** integration with advanced features:
+- See [Google Cloud Setup Guide](GOOGLE_CLOUD_SETUP.md) for detailed instructions
+- Includes entity salience, sentiment analysis, and Knowledge Graph integration
+
+For **SpaCy** (default, no setup required):
+- Works out of the box with included models
+- Ideal for privacy-sensitive deployments
+
 ## System Requirements & Architecture Overview
 
 **Application Stack:**

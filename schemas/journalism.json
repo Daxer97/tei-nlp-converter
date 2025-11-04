@@ -1,0 +1,72 @@
+{
+  "domain": "journalism",
+  "title": "Journalism & News Articles",
+  "description": "TEI schema for news articles, press releases, and journalism",
+
+  "annotation_strategy": "inline",
+
+  "include_pos": false,
+  "include_lemma": false,
+  "include_dependencies": false,
+  "include_analysis": true,
+  "use_paragraphs": true,
+
+  "entity_mappings": {
+    "PERSON": "persName",
+    "JOURNALIST": "persName",
+    "AUTHOR": "persName",
+    "REPORTER": "persName",
+    "SOURCE": "persName",
+    "OFFICIAL": "persName",
+    "SPOKESPERSON": "persName",
+
+    "ORG": "orgName",
+    "ORGANIZATION": "orgName",
+    "PUBLICATION": "orgName",
+    "NEWS_OUTLET": "orgName",
+    "MEDIA_OUTLET": "orgName",
+    "AGENCY": "orgName",
+    "GOVERNMENT": "orgName",
+    "COMPANY": "orgName",
+
+    "LOC": "placeName",
+    "LOCATION": "placeName",
+    "COUNTRY": "placeName",
+    "CITY": "placeName",
+    "GPE": "placeName",
+
+    "DATE": "date",
+    "TIME": "time",
+
+    "EVENT": "event",
+    "INCIDENT": "event",
+
+    "QUOTE": "quote",
+    "STATEMENT": "quote",
+
+    "HEADLINE": "head",
+    "TITLE": "title",
+    "WORK_OF_ART": "title",
+
+    "MONEY": "measure",
+    "PERCENT": "measure",
+    "QUANTITY": "measure",
+
+    "DEFAULT": "name"
+  },
+
+  "additional_tags": [
+    "head",
+    "byline",
+    "dateline",
+    "quote",
+    "said",
+    "ref",
+    "bibl",
+    "note"
+  ],
+
+  "classification": true,
+  "text_class": "journalism",
+  "include_metadata": true
+}

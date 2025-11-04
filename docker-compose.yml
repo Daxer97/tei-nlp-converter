@@ -10,10 +10,16 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - NLP_PROVIDER=${NLP_PROVIDER:-spacy}
+      - NLP_FALLBACK_PROVIDERS=${NLP_FALLBACK_PROVIDERS:-spacy}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-/app/google-credentials.json}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./schemas:/app/schemas
+      # Mount Google Cloud credentials if available
+      - ${GOOGLE_CREDENTIALS_HOST_PATH:-./google-credentials.json}:/app/google-credentials.json:ro
     depends_on:
       - redis
     restart: unless-stopped

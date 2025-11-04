@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     google_project_id: Optional[str] = None
     google_credentials_path: Optional[str] = None
     google_api_key: Optional[str] = None
+    google_api_rate_limit: int = 600  # requests per minute
+    google_api_quota_daily: int = 800000  # characters per day
+    google_api_max_text_length: int = 1000000  # 1M characters per request
     
     # Database settings
     database_url: str = "sqlite:///data/tei_nlp.db"

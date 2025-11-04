@@ -641,3 +641,274 @@ footer a:hover {
         border: 1px solid #000;
     }
 }
+
+/* ===================================
+   Google Cloud NLP Enhanced Features
+   =================================== */
+
+/* Provider Status Badge */
+.provider-status {
+    margin: 0.5rem 0;
+}
+
+.provider-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: var(--light-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    font-size: 0.9rem;
+    transition: all 0.3s ease;
+}
+
+.provider-badge:hover {
+    background: white;
+    box-shadow: var(--shadow-sm);
+}
+
+.provider-name {
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+.provider-health {
+    font-size: 1.2rem;
+}
+
+.health-available {
+    color: var(--success-color);
+}
+
+.health-degraded {
+    color: var(--warning-color);
+}
+
+.health-unavailable {
+    color: var(--danger-color);
+}
+
+.health-unknown {
+    color: var(--text-secondary);
+}
+
+/* Processing Info Badges */
+.processing-info {
+    margin-bottom: 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.processing-info strong {
+    color: var(--primary-color);
+}
+
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.6rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.badge-info {
+    background: #d1ecf1;
+    color: #0c5460;
+}
+
+.badge-warning {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.features-badge {
+    padding: 0.2rem 0.5rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    margin-left: 0.5rem;
+}
+
+/* Enhanced Entity Cards */
+.entities-enhanced {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.entity-card {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 0.75rem;
+    background: white;
+    border: 2px solid;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow-sm);
+}
+
+.entity-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+}
+
+.entity-card.entity-person {
+    border-color: #3498db;
+    background: linear-gradient(135deg, #ffffff 0%, #ebf8ff 100%);
+}
+
+.entity-card.entity-place {
+    border-color: #27ae60;
+    background: linear-gradient(135deg, #ffffff 0%, #f0fff4 100%);
+}
+
+.entity-card.entity-org {
+    border-color: #e67e22;
+    background: linear-gradient(135deg, #ffffff 0%, #fff5f0 100%);
+}
+
+.entity-card.entity-time {
+    border-color: #9b59b6;
+    background: linear-gradient(135deg, #ffffff 0%, #f3ebff 100%);
+}
+
+.entity-card.entity-misc {
+    border-color: #95a5a6;
+    background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+}
+
+.entity-text {
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+.entity-label {
+    font-size: 0.75rem;
+    padding: 0.1rem 0.4rem;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Salience Badges */
+.salience-badge {
+    padding: 0.2rem 0.5rem;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+}
+
+.salience-high {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    color: white;
+}
+
+.salience-medium {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+}
+
+.salience-low {
+    background: #e0e0e0;
+    color: #757575;
+}
+
+/* Sentiment Badges */
+.sentiment-badge {
+    padding: 0.2rem 0.4rem;
+    border-radius: 50%;
+    font-size: 1.1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s ease;
+}
+
+.sentiment-badge:hover {
+    transform: scale(1.2);
+}
+
+.sentiment-positive {
+    background: #d4edda;
+}
+
+.sentiment-negative {
+    background: #f8d7da;
+}
+
+.sentiment-neutral {
+    background: #fff3cd;
+}
+
+/* Knowledge Graph Links */
+.kg-link {
+    padding: 0.2rem 0.4rem;
+    background: #f0f0f0;
+    border-radius: 4px;
+    text-decoration: none;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+}
+
+.kg-link:hover {
+    background: var(--secondary-color);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .entities-enhanced {
+        gap: 0.5rem;
+    }
+
+    .entity-card {
+        font-size: 0.85rem;
+        padding: 0.4rem 0.6rem;
+        gap: 0.3rem;
+    }
+
+    .salience-badge,
+    .entity-label {
+        font-size: 0.7rem;
+    }
+
+    .processing-info {
+        font-size: 0.85rem;
+    }
+}
+
+/* Animation for new features */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.entity-card,
+.provider-badge {
+    animation: fadeIn 0.3s ease-out;
+}
+

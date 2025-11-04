@@ -1,0 +1,66 @@
+{
+  "domain": "social-media",
+  "title": "Social Media Content",
+  "description": "TEI schema for social media posts, comments, and online discourse",
+
+  "annotation_strategy": "inline",
+
+  "include_pos": false,
+  "include_lemma": false,
+  "include_dependencies": false,
+  "include_analysis": true,
+  "use_paragraphs": false,
+
+  "entity_mappings": {
+    "PERSON": "persName",
+    "USERNAME": "persName",
+    "MENTION": "persName",
+    "HANDLE": "persName",
+    "INFLUENCER": "persName",
+
+    "ORG": "orgName",
+    "ORGANIZATION": "orgName",
+    "BRAND": "orgName",
+    "PLATFORM": "orgName",
+    "COMPANY": "orgName",
+
+    "LOC": "placeName",
+    "LOCATION": "placeName",
+    "GPE": "placeName",
+
+    "HASHTAG": "ref",
+    "TAG": "ref",
+    "URL": "ref",
+    "LINK": "ref",
+
+    "EMOJI": "note",
+    "EMOTICON": "note",
+
+    "DATE": "date",
+    "TIME": "time",
+    "TIMESTAMP": "time",
+
+    "PRODUCT": "objectName",
+    "CONSUMER_GOOD": "objectName",
+
+    "EVENT": "event",
+
+    "MONEY": "measure",
+    "PERCENT": "measure",
+
+    "DEFAULT": "name"
+  },
+
+  "additional_tags": [
+    "ref",
+    "note",
+    "quote",
+    "abbr",
+    "emph",
+    "hi"
+  ],
+
+  "classification": true,
+  "text_class": "social-media",
+  "strict_structure": false
+}

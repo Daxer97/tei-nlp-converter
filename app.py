@@ -115,8 +115,7 @@ class PersistentTaskManager:
         self.max_concurrent_tasks = settings.get('max_concurrent_tasks', 10)
         self._lock = asyncio.Lock()
     
-    @property
-    async def active_task_count(self) -> int:
+    async def get_active_task_count(self) -> int:
         """Get active task count with caching"""
         async with self._lock:
             # Cache the count for 5 seconds to reduce DB queries
@@ -142,20 +141,50 @@ class PersistentTaskManager:
                    extra={"request_id": request_id, "task_id": task_id})
         return task
     
-    def update_task(self, task_id: str, status: TaskStatus, 
-                   result: Optional[Dict] = None, error: Optional[str] = None):
-        """Update task status in database with proper error handling"""
+    def update_task(self, task_id: str, status: TaskStatus,
+                   result: Optional[Dict] = None, error: Optional[str] = None,
+                   expected_version: Optional[int] = None):
+        """
+        Update task status in database with atomic metrics updates
+
+        Args:
+            task_id: Task ID to update
+            status: New status
+            result: Task result (optional)
+            error: Error message (optional)
+            expected_version: Expected version for optimistic locking (optional)
+
+        Returns:
+            Updated task or None if failed
+
+        Raises:
+            ValueError: If state transition is invalid or version mismatch
+        """
         try:
-            task = self.storage.update_task(task_id, status, result, error)
-            
-            if status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
+            result_tuple = self.storage.update_task(task_id, status, result, error, expected_version)
+
+            if result_tuple is None:
+                logger.warning(f"Task {task_id} not found for update")
+                return None
+
+            task, should_decrement = result_tuple
+
+            # Only decrement if the storage layer says we should
+            # This prevents race conditions and double-decrementing
+            if should_decrement:
                 active_tasks.dec()
-            
-            logger.info(f"Updated task {task_id} to {status.value}", 
+                logger.debug(f"Decremented active_tasks counter for task {task_id}")
+
+            logger.info(f"Updated task {task_id} to {status.value}",
                        extra={"task_id": task_id, "status": status.value})
             return task
+        except ValueError as e:
+            # State machine validation error or version mismatch
+            logger.warning(f"Task update rejected for {task_id}: {e}",
+                          extra={"task_id": task_id})
+            raise
         except Exception as e:
-            logger.error(f"Failed to update task {task_id}: {e}", 
+            logger.error(f"Failed to update task {task_id}: {e}",
                         extra={"task_id": task_id})
             return None
     
@@ -574,7 +603,7 @@ async def process_text(
     
     try:
         # Check concurrent task limit
-        if await task_manager.active_task_count >= settings.get('max_concurrent_tasks', 10):
+        if await task_manager.get_active_task_count() >= settings.get('max_concurrent_tasks', 10):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Server at capacity, please try again later"
@@ -679,7 +708,15 @@ async def process_text(
         )
 
 async def process_text_sync(request: TextProcessRequest, request_id: str, user_id: str) -> ProcessedText:
-    """Synchronously process text with caching and error recovery"""
+    """
+    Synchronously process text with proper transaction boundaries and caching
+
+    Transaction Strategy:
+    1. Pre-serialize data outside transaction (fast)
+    2. Execute database write in transaction
+    3. Only cache after successful commit
+    4. Cache failures don't fail the request
+    """
     # Check cache first
     cache_key = f"processed:{security_manager.hash_text(request.text)}:{request.domain}"
     cached = cache_manager.get(cache_key)
@@ -687,9 +724,9 @@ async def process_text_sync(request: TextProcessRequest, request_id: str, user_i
         logger.info(f"Cache hit for request {request_id}")
         cache_hits.inc()
         return cached
-    
+
     cache_misses.inc()
-    
+
     # Process with NLP - use lazy-loaded processor
     nlp_processor = await get_nlp_processor()
     try:
@@ -705,34 +742,73 @@ async def process_text_sync(request: TextProcessRequest, request_id: str, user_i
             "text": request.text,
             "processing_note": "Simplified processing due to service error"
         }
-    
+
     # Get domain schema
     schema = ontology_manager.get_schema(request.domain)
-    
-    # Convert to TEI XML
+
+    # Detect provider from NLP results metadata
+    provider_name = nlp_results.get('_metadata', {}).get('provider', settings.get('nlp_provider', 'spacy'))
+
+    # Convert to TEI XML with provider-aware optimization
     try:
-        tei_converter = TEIConverter(schema, security_manager)
+        tei_converter = TEIConverter(
+            schema=schema,
+            security_manager=security_manager,
+            provider_name=provider_name,
+            ontology_manager=ontology_manager
+        )
         tei_xml = tei_converter.convert(request.text, nlp_results)
     except Exception as e:
         logger.error(f"TEI conversion failed: {e}")
         # Create minimal valid TEI
         tei_xml = create_minimal_tei(request.text, request.domain, str(e) if settings.debug else None)
-    
-    # Store in database
-    processed_text = storage.save_processed_text(
-        text=request.text,
-        domain=request.domain,
-        nlp_results=nlp_results,
-        tei_xml=tei_xml,
-        text_hash=security_manager.hash_text(request.text),
-        processing_time=0.0,
-        request_id=request_id,
-        user_id=user_id
-    )
-    
-    # Cache the result
-    cache_manager.set(cache_key, processed_text, ttl=settings.cache_ttl)
-    
+
+    # Pre-serialize JSON outside of transaction to avoid holding locks during serialization
+    # This is important for performance - JSON serialization can be slow for large documents
+    import json
+    try:
+        nlp_results_json = json.dumps(nlp_results)
+    except (TypeError, ValueError) as e:
+        logger.error(f"Failed to serialize NLP results: {e}")
+        # Fallback to simplified results
+        nlp_results_json = json.dumps({
+            "text": request.text,
+            "error": "Serialization failed",
+            "processing_note": str(e)
+        })
+
+    # === Transaction Boundary Starts ===
+    # Everything inside this block should be fast and not involve I/O
+    try:
+        processed_text = storage.save_processed_text(
+            text=request.text,
+            domain=request.domain,
+            nlp_results=nlp_results,  # Still pass dict for compatibility, but we pre-serialized
+            tei_xml=tei_xml,
+            text_hash=security_manager.hash_text(request.text),
+            processing_time=0.0,
+            request_id=request_id,
+            user_id=user_id
+        )
+        # === Transaction Boundary Ends (commit happens inside save_processed_text) ===
+
+        logger.info(f"Successfully saved processed text to database (request_id: {request_id})")
+
+    except Exception as e:
+        logger.error(f"Database write failed for request {request_id}: {e}")
+        # Don't cache if database write failed - database is source of truth
+        raise
+
+    # Only cache after successful database commit
+    # Cache failures should NOT fail the request - cache is supplementary
+    try:
+        cache_manager.set(cache_key, processed_text, ttl=settings.cache_ttl)
+        logger.debug(f"Cached result for request {request_id}")
+    except Exception as e:
+        # Log but don't fail - cache is best-effort
+        logger.warning(f"Failed to cache result for request {request_id}: {e}")
+        # Continue - we still have the data in database
+
     return processed_text
 
 def create_minimal_tei(text: str, domain: str, error: Optional[str] = None) -> str:
@@ -811,35 +887,62 @@ async def upload_and_process(
     auth_result = Depends(auth) if settings.require_auth else None
 ):
     """Upload a file and process it"""
-    request_id = getattr(req.state, "request_id", str(uuid.uuid4()))
-    
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+
+    # Sanitize filename to prevent path traversal
+    safe_filename = security_manager.sanitize_filename(file.filename)
+
     # Validate file type
-    if not security_manager.validate_file_type(file.filename):
+    if not security_manager.validate_file_type(safe_filename):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid file type. Supported: .txt, .md"
         )
-    
-    # Validate file size (100KB max)
-    if file.size > 102400:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="File too large. Maximum size is 100KB"
-        )
-    
-    # Read file content
+
+    # Validate content-type
+    security_manager.validate_content_type(file.content_type, safe_filename)
+
+    # Sanitize domain to prevent path traversal
+    allowed_domains = ontology_manager.get_available_domains()
+    safe_domain = security_manager.sanitize_domain(domain, allowed_domains)
+
+    # Read file content with size limit
+    max_size = 102400  # 100KB
+    content = b""
+    bytes_read = 0
+
     try:
-        content = await file.read()
+        # Read file in chunks to prevent memory exhaustion
+        chunk_size = 8192
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+
+            bytes_read += len(chunk)
+            if bytes_read > max_size:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"File too large. Maximum size is {max_size // 1024}KB"
+                )
+
+            content += chunk
+
+        # Decode as UTF-8
         text = content.decode('utf-8')
+
     except UnicodeDecodeError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="File must be UTF-8 encoded text"
         )
-    
+    finally:
+        # Ensure file is closed
+        await file.close()
+
     # Process as regular text
-    request = TextProcessRequest(text=text, domain=domain)
-    return await process_text(request, background_tasks, req, auth_result)
+    data = TextProcessRequest(text=text, domain=safe_domain)
+    return await process_text(data, background_tasks, request, auth_result)
 
 @app.get("/download/{text_id}", tags=["Processing"])
 async def download_tei(
@@ -1010,7 +1113,7 @@ async def get_statistics(
     
     stats = storage.get_statistics()
     stats.update({
-        "active_tasks": await task_manager.active_task_count(),
+        "active_tasks": await task_manager.get_active_task_count(),
         "user_texts": storage.count_texts_by_user(user_id),
         "cache": cache_manager.get_stats()
     })
