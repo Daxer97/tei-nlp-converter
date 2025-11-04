@@ -4,19 +4,14 @@ Here's a clean, presentable file structure for the TEI NLP Converter project wit
 tei-nlp-converter/
 │
 ├── .env                           # Environment variables (create from .env.example)
-├── .env.example                   # Environment template with Google Cloud config
+├── .env.example                   # Environment template
 ├── .gitignore                     # Git ignore file
 ├── alembic.ini                    # Database migration config
-├── docker-compose.yml             # Docker orchestration with Google credentials
+├── docker-compose.yml             # Docker orchestration
 ├── Dockerfile                     # Container definition
 ├── Makefile                       # Build automation
 ├── nginx.conf                     # Nginx configuration
-│
-├── README.md                      # Main deployment guide
-├── README_HOW_IT_WORKS.md         # Architecture and workflow documentation
-├── README_STRUCT.md               # This file - project structure
-├── GOOGLE_CLOUD_SETUP.md          # Google Cloud NLP setup guide
-├── CUSTOM_SCHEMAS_GUIDE.md        # Complete custom schema guide
+├── README.md                      # Project documentation
 ├── requirements.txt               # Python dependencies
 │
 ├── app.py                         # Main FastAPI application
@@ -29,18 +24,17 @@ tei-nlp-converter/
 ├── circuit_breaker.py             # Circuit breaker pattern
 ├── cache_manager.py               # Caching layer
 ├── nlp_connector.py               # NLP processing orchestrator
-├── tei_converter.py               # TEI XML converter with provider-aware strategies
-├── ontology_manager.py            # Domain schema manager with provider mappings
+├── tei_converter.py               # TEI XML converter
+├── ontology_manager.py            # Domain schema manager (fix typo!)
 ├── background_tasks.py            # Async task management
 ├── secrets_manager.py             # Secrets management
-├── validate_schema.py             # Schema validation tool (executable)
 │
-├── nlp_providers/                 # Multi-provider NLP architecture
+├── nlp_providers/                 # NLP provider implementations
 │   ├── __init__.py               # Package init
-│   ├── base.py                   # Abstract base provider with capabilities
-│   ├── registry.py               # Provider registry and health checking
-│   ├── spacy_local.py            # SpaCy local implementation
-│   ├── google_cloud.py           # Google Cloud NLP with enhanced features
+│   ├── base.py                   # Abstract base provider
+│   ├── registry.py               # Provider registry
+│   ├── spacy_local.py            # SpaCy implementation
+│   ├── google_cloud.py           # Google Cloud NLP
 │   └── remote_server.py          # Remote NLP server client
 │
 ├── migrations/                    # Database migrations
@@ -49,18 +43,20 @@ tei-nlp-converter/
 │   └── alembic/
 │       └── env.py                # Alembic environment
 │
-├── schemas/                       # Custom TEI schemas directory
-│   ├── README.md                 # Schema directory documentation
-│   ├── medical.json              # Medical domain schema (example)
-│   ├── journalism.json           # Journalism schema (example)
-│   └── social-media.json         # Social media schema (example)
+├── schemas/                       # Custom TEI schemas (JSON)
+│   ├── literary.json             # Literary domain schema
+│   ├── historical.json          # Historical domain schema
+│   ├── legal.json               # Legal domain schema
+│   ├── scientific.json          # Scientific domain schema
+│   └── [custom].json             # Add your custom schemas here
 │
 ├── templates/                     # HTML templates
-│   └── index.html                # Main web interface with provider status
+│   ├── index.html                # Main web interface
+│   └── schema_builder.html       # Schema builder (optional)
 │
 ├── static/                        # Static assets
-│   ├── style.css                 # Application styles with Google feature styling
-│   ├── script.js                 # Client-side JavaScript with entity cards
+│   ├── style.css                 # Application styles
+│   ├── script.js                 # Client-side JavaScript
 │   └── favicon.ico               # Site icon
 │
 ├── tests/                         # Test suite
@@ -68,8 +64,7 @@ tei-nlp-converter/
 │   ├── test_app.py               # Application tests
 │   ├── test_nlp.py               # NLP processing tests
 │   ├── test_tei.py               # TEI conversion tests
-│   ├── test_integration.py       # Integration tests
-│   └── test_google_nlp_integration.py  # Google Cloud NLP tests
+│   └── test_integration.py       # Integration tests
 │
 ├── kubernetes/                    # Kubernetes deployments
 │   └── production-deployment.yaml
@@ -88,71 +83,6 @@ tei-nlp-converter/
 ```
 
 ## Project Architecture Overview
-
-### Multi-Provider NLP Architecture
-
-The application supports three NLP providers with intelligent fallback:
-
-**1. Google Cloud NLP** (Cloud-based)
-- Entity salience scoring (importance ranking)
-- Entity sentiment analysis
-- Knowledge Graph integration (Wikipedia, MIDs)
-- Rich morphological features
-- Text classification
-- **Setup Guide**: `GOOGLE_CLOUD_SETUP.md`
-
-**2. SpaCy** (Local)
-- Fast local processing
-- Rich morphology and dependency parsing
-- Privacy-focused (no external API)
-- Noun chunk extraction
-- **Default provider**, no setup required
-
-**3. Remote NLP Server** (Custom)
-- Extensible custom NLP deployment
-- Generic processing capabilities
-- Configurable endpoint
-
-### Provider-Specific Features
-
-**Dynamic Conversion Strategies:**
-- `_google_conversion_strategy()` - Leverages salience, sentiment, KG
-- `_spacy_conversion_strategy()` - Emphasizes morphology, dependencies
-- `_remote_conversion_strategy()` - Generic processing
-
-**Provider-Aware Entity Mappings:**
-- Google-specific: `PHONE_NUMBER`, `ADDRESS`, `CONSUMER_GOOD`, `PRICE`
-- SpaCy-specific: `GPE`, `NORP`, `FAC`, `LAW`, `LANGUAGE`
-- Domain mappings override provider defaults
-
-**Granularity-Aware Processing:**
-- Auto-enables sentiment for Google Cloud NLP
-- Auto-disables unsupported features per provider
-- Optimizes processing based on provider capabilities
-
-### Custom Schema System
-
-**Built-in Schemas (10):** `default`, `literary`, `historical`, `legal`, `scientific`, `linguistic`, `manuscript`, `dramatic`, `poetry`, `epistolary`
-
-**Custom Schemas:** Add JSON files to `schemas/` directory
-- Medical (`medical.json`) - 40+ medical entity types
-- Journalism (`journalism.json`) - News-specific entities
-- Social Media (`social-media.json`) - Hashtags, mentions, emoji
-
-**Tools:**
-- `validate_schema.py` - Validate schema JSON before deployment
-- `CUSTOM_SCHEMAS_GUIDE.md` - Complete guide (400+ lines)
-
-### Documentation Structure
-
-| File | Purpose |
-|------|---------|
-| `README.md` | Proxmox deployment guide |
-| `README_HOW_IT_WORKS.md` | Architecture and data flow |
-| `README_STRUCT.md` | This file - project structure |
-| `GOOGLE_CLOUD_SETUP.md` | Google Cloud NLP setup (400+ lines) |
-| `CUSTOM_SCHEMAS_GUIDE.md` | Custom schema guide (400+ lines) |
-| `schemas/README.md` | Schema directory quick reference |
 
 # TEI NLP Converter - System Architecture Diagram
 
@@ -206,12 +136,11 @@ The application supports three NLP providers with intelligent fallback:
 ║  │  │                    FASTAPI APPLICATION                               │ │     ║
 ║  │  │                   (/opt/tei-nlp-converter)                           │ │     ║
 ║  │  │                                                                      │ │     ║
-║  │  │   ┌──────────────┐  ┌─────────────────────┐  ┌──────────────┐       │ │     ║
-║  │  │   │   app.py     │  │  NLP Providers      │  │ TEI Convert  │       │ │     ║
-║  │  │   │   (Main)     │→ │  - Google Cloud NLP │→ │  - Schemas   │       │ │     ║
-║  │  │   │              │  │  - SpaCy (Local)    │  │  - Provider  │       │ │     ║
-║  │  │   │              │  │  - Remote Server    │  │    Strategies│       │ │     ║
-║  │  │   └──────────────┘  └─────────────────────┘  └──────────────┘       │ │     ║
+║  │  │   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐            │ │     ║
+║  │  │   │   app.py     │  │ NLP Pipeline │  │ TEI Convert  │            │ │     ║
+║  │  │   │   (Main)     │→ │  - SpaCy     │→ │  - Schemas   │            │ │     ║
+║  │  │   │              │  │  - Google    │  │  - XML Gen   │            │ │     ║
+║  │  │   └──────────────┘  └──────────────┘  └──────────────┘            │ │     ║
 ║  │  │         │                   │                 │                     │ │     ║
 ║  │  │         ├───────────────────┼─────────────────┤                     │ │     ║
 ║  │  │         │                   │                 │                     │ │     ║

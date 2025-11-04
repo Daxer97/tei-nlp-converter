@@ -13,46 +13,30 @@ from logger import get_logger
 logger = get_logger(__name__)
 
 class TEIConverter:
-    def __init__(self, schema: Dict[str, Any], security_manager = None, provider_name: str = None, ontology_manager = None):
-        """Initialize converter with domain-specific schema, security, and provider awareness"""
+    def __init__(self, schema: Dict[str, Any], security_manager = None):
+        """Initialize converter with domain-specific schema and security"""
         self.schema = schema
         self.security_manager = security_manager
-        self.provider_name = provider_name or 'spacy'
-        self.ontology_manager = ontology_manager
         self.namespaces = {
             'tei': 'http://www.tei-c.org/ns/1.0',
             'xml': 'http://www.w3.org/XML/1998/namespace'
         }
-
+        
         # Validate schema structure
         self._validate_schema()
-
-        # Get provider-specific entity type mappings
-        if self.ontology_manager:
-            self.entity_mappings = self.ontology_manager.get_provider_entity_mappings(
-                self.provider_name,
-                schema.get('domain')
-            )
-        else:
-            # Fallback to schema mappings
-            self.entity_mappings = schema.get('entity_mappings', {
-                "PERSON": "persName",
-                "PER": "persName",
-                "LOC": "placeName",
-                "GPE": "placeName",
-                "ORG": "orgName",
-                "DATE": "date",
-                "TIME": "time",
-                "MONEY": "measure",
-                "DEFAULT": "name"
-            })
-
-        # Provider-specific conversion strategies
-        self.provider_strategies = {
-            'google': self._google_conversion_strategy,
-            'spacy': self._spacy_conversion_strategy,
-            'remote': self._remote_conversion_strategy
-        }
+        
+        # Entity type mappings
+        self.entity_mappings = schema.get('entity_mappings', {
+            "PERSON": "persName",
+            "PER": "persName",
+            "LOC": "placeName",
+            "GPE": "placeName",
+            "ORG": "orgName",
+            "DATE": "date",
+            "TIME": "time",
+            "MONEY": "measure",
+            "DEFAULT": "name"
+        })
     
     def _validate_schema(self):
         """Validate schema structure"""
@@ -115,15 +99,13 @@ class TEIConverter:
             return False
     
     def convert(self, text: str, nlp_results: Dict[str, Any]) -> str:
-        """Convert NLP results to TEI XML with validation and provider-aware optimizations"""
+        """Convert NLP results to TEI XML with validation"""
         # Validate NLP results
         if not self._validate_nlp_results(nlp_results):
             logger.warning("Invalid NLP results, creating minimal TEI")
             return self._create_fallback_tei(text, "Invalid NLP results structure")
-
+        
         try:
-            # Apply provider-specific conversion strategy
-            nlp_results = self._apply_provider_strategy(nlp_results)
             # Register namespaces
             for prefix, uri in self.namespaces.items():
                 ET.register_namespace(prefix, uri)
@@ -526,71 +508,30 @@ class TEIConverter:
             item.text = str(value)
     
     def _create_entity_element(self, entity: Dict[str, Any]) -> ET.Element:
-        """Create appropriate entity element based on type with provider-specific enhancements"""
+        """Create appropriate entity element based on type"""
         entity_type = entity['label'].upper()
-
-        # Get mapping from provider-aware mappings
+        
+        # Get mapping from schema or use default
         element_name = self.entity_mappings.get(
-            entity_type,
+            entity_type, 
             self.entity_mappings.get('DEFAULT', 'name')
         )
-
+        
         elem = ET.Element(f'{{http://www.tei-c.org/ns/1.0}}{element_name}')
-
+        
         # Add type attribute if using generic name element
         if element_name == 'name':
             elem.set('type', entity_type.lower())
-
+        
         # Add confidence if available
         if 'confidence' in entity:
             elem.set('cert', self._confidence_to_certainty(entity['confidence']))
-
+        
         # Add reference if available
         if 'kb_id' in entity:
             elem.set('ref', entity['kb_id'])
-
-        # Google Cloud NLP specific features
-        if entity.get('provider') == 'google':
-            # Add salience (importance) score
-            if 'salience' in entity:
-                elem.set('ana', f"#salience-{self._salience_to_level(entity['salience'])}")
-
-            # Add sentiment if available
-            if 'sentiment' in entity:
-                sentiment = entity['sentiment']
-                elem.set('sentiment', self._sentiment_score_to_category(sentiment['score']))
-
-            # Add Knowledge Graph metadata
-            if 'metadata' in entity:
-                metadata = entity['metadata']
-                if 'wikipedia_url' in metadata:
-                    elem.set('ref', metadata['wikipedia_url'])
-                if 'knowledge_graph_mid' in metadata:
-                    elem.set('corresp', f"https://www.google.com/kg/mid{metadata['knowledge_graph_mid']}")
-
-            # Add mention type
-            if 'mention_type' in entity:
-                elem.set('subtype', entity['mention_type'].lower())
-
+        
         return elem
-
-    def _salience_to_level(self, salience: float) -> str:
-        """Convert salience score to categorical level"""
-        if salience >= 0.5:
-            return 'high'
-        elif salience >= 0.2:
-            return 'medium'
-        else:
-            return 'low'
-
-    def _sentiment_score_to_category(self, score: float) -> str:
-        """Convert sentiment score to category"""
-        if score >= 0.25:
-            return 'positive'
-        elif score <= -0.25:
-            return 'negative'
-        else:
-            return 'neutral'
     
     def _confidence_to_certainty(self, confidence: float) -> str:
         """Convert confidence score to TEI certainty value"""
@@ -656,89 +597,6 @@ class TEIConverter:
         cat_desc = ET.SubElement(category, '{http://www.tei-c.org/ns/1.0}catDesc')
         cat_desc.text = self.schema.get('description', f'{self.schema["domain"]} domain texts')
     
-    # ===========================
-    # Provider-Specific Conversion Strategies
-    # ===========================
-
-    def _google_conversion_strategy(self, nlp_results: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Apply Google Cloud NLP specific enhancements to results
-
-        Leverages:
-        - Entity salience for importance ranking
-        - Entity sentiment for emotional context
-        - Knowledge Graph integration
-        - Rich metadata
-        """
-        enhanced = nlp_results.copy()
-
-        # Sort entities by salience if available
-        if 'entities' in enhanced and enhanced['entities']:
-            entities_with_salience = [e for e in enhanced['entities'] if 'salience' in e]
-            if entities_with_salience:
-                enhanced['entities'] = sorted(
-                    enhanced['entities'],
-                    key=lambda e: e.get('salience', 0),
-                    reverse=True
-                )
-
-        # Add provider metadata
-        if '_metadata' not in enhanced:
-            enhanced['_metadata'] = {}
-        enhanced['_metadata']['provider'] = 'google'
-        enhanced['_metadata']['features'] = [
-            'entity_salience', 'entity_sentiment', 'knowledge_graph'
-        ]
-
-        logger.debug("Applied Google Cloud NLP conversion strategy")
-        return enhanced
-
-    def _spacy_conversion_strategy(self, nlp_results: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Apply SpaCy-specific enhancements to results
-
-        Leverages:
-        - Rich morphological features
-        - Dependency parsing
-        - Noun chunks
-        """
-        enhanced = nlp_results.copy()
-
-        # Add provider metadata
-        if '_metadata' not in enhanced:
-            enhanced['_metadata'] = {}
-        enhanced['_metadata']['provider'] = 'spacy'
-        enhanced['_metadata']['features'] = [
-            'morphology', 'dependencies', 'noun_chunks'
-        ]
-
-        logger.debug("Applied SpaCy conversion strategy")
-        return enhanced
-
-    def _remote_conversion_strategy(self, nlp_results: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Apply remote server-specific enhancements to results
-
-        Generic processing for remote NLP servers
-        """
-        enhanced = nlp_results.copy()
-
-        # Add provider metadata
-        if '_metadata' not in enhanced:
-            enhanced['_metadata'] = {}
-        enhanced['_metadata']['provider'] = 'remote'
-
-        logger.debug("Applied remote server conversion strategy")
-        return enhanced
-
-    def _apply_provider_strategy(self, nlp_results: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply provider-specific conversion strategy"""
-        # Detect provider from results or use configured provider
-        provider = nlp_results.get('_metadata', {}).get('provider', self.provider_name)
-
-        strategy = self.provider_strategies.get(provider, self._spacy_conversion_strategy)
-        return strategy(nlp_results)
-
     def _prettify_xml(self, xml_str: str) -> str:
         """Pretty print XML with proper indentation and security"""
         try:

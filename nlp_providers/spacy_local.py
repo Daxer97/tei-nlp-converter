@@ -313,29 +313,15 @@ class SpacyLocalProvider(NLPProvider):
         """Clean up resources"""
         if self._executor:
             try:
-                # Shutdown with wait=True to ensure all threads are cleaned up
-                # This prevents thread leaks but may block briefly
-                self._executor.shutdown(wait=True)
-                logger.debug("Executor shutdown completed")
+                self._executor.shutdown(wait=False)
             except Exception as e:
-                logger.warning(f"Error shutting down executor: {e}")
-            finally:
-                self._executor = None
-
-        # Clear SpaCy model from memory
-        if self.nlp:
-            # Breaking circular references in SpaCy's internal structures
-            self.nlp = None
-            logger.debug("SpaCy model cleared from memory")
-
+                logger.debug(f"Error shutting down executor: {e}")
+            self._executor = None
+        
+        self.nlp = None
         self._initialized = False
-
+    
     async def close(self):
-        """
-        Cleanup resources and free memory
-
-        Shuts down thread pool executor, clears SpaCy model from memory,
-        and breaks circular references to prevent memory leaks.
-        """
+        """Cleanup resources"""
         self._cleanup()
-        logger.info("SpaCy provider closed successfully")
+        logger.info("SpaCy provider closed")
