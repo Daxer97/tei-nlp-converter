@@ -1,0 +1,96 @@
+#
+# Legal Domain Pipeline Configuration
+#
+# This configuration optimizes the pipeline for legal text processing.
+#
+
+# Processing stages to enable
+enabled_stages:
+  - "ner"
+  - "kb_enrichment"
+  - "pattern_matching"
+  - "post_processing"
+
+# NER Configuration
+ner_model_ids:
+  - "nlpaueb/legal-bert-base-uncased"  # Legal-BERT
+  - "en_core_web_lg"                   # spaCy large model with legal entities
+
+ner_ensemble_mode: false         # Single model sufficient for legal text
+ner_min_confidence: 0.65         # Slightly higher threshold for legal precision
+
+# Knowledge Base Configuration
+kb_ids:
+  - "usc"                        # United States Code
+  - "courtlistener"              # Case law
+
+kb_enrich_all: true              # Enrich all entities for legal context
+kb_min_confidence_for_enrichment: 0.5
+
+# Pattern Matching Configuration
+pattern_domains:
+  - "legal"
+
+pattern_auto_detect_domain: false  # Legal text is domain-specific
+pattern_min_confidence: 0.7        # Higher confidence for citations
+
+# Post-processing Configuration
+deduplication_enabled: true
+deduplication_threshold: 0.9      # Stricter for legal citations
+merge_overlapping: false          # Keep separate citations distinct
+
+# Performance Tuning
+parallel_processing: true
+max_concurrent_kb_lookups: 5      # Fewer concurrent lookups for legal KBs
+timeout_seconds: 45.0             # Longer timeout for government APIs
+
+# Trust and Security
+enable_trust_validation: true
+
+trust_policy:
+  # Minimum trust levels
+  min_model_trust_level: "verified"
+  min_kb_trust_level: "trusted"    # Require authoritative sources for legal
+
+  # Model requirements
+  require_model_checksum: true
+  require_model_signature: false
+  require_malware_scan: true
+
+  # KB requirements
+  require_kb_https: true
+  require_kb_api_key: false
+  prefer_authoritative_sources: true  # Critical for legal accuracy
+
+  # Trust score thresholds
+  min_reputation_score: 4.0        # Higher standard for legal
+  min_quality_score: 0.85
+
+# Optimization
+optimization_strategy: "accuracy"  # Prioritize accuracy over speed for legal
+
+# A/B Testing
+ab_testing_enabled: false
+
+# Monitoring
+metrics_enabled: true
+metrics_export_interval_seconds: 60
+
+# Caching
+cache_enabled: true
+cache_ttl_seconds: 86400          # 24 hours for legal citations
+
+# Fallbacks
+enable_fallbacks: true
+fallback_chain:
+  ner_models:
+    - "nlpaueb/legal-bert-base-uncased"
+    - "en_core_web_lg"
+  kbs:
+    - "usc"
+    - "courtlistener"
+    - "cfr"
+
+# Citation Linking
+citation_linking_enabled: true    # Automatically link citations to KB
+citation_validation_enabled: true  # Validate citation formats
