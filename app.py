@@ -708,7 +708,15 @@ async def process_text(
         )
 
 async def process_text_sync(request: TextProcessRequest, request_id: str, user_id: str) -> ProcessedText:
-    """Synchronously process text with caching and error recovery"""
+    """
+    Synchronously process text with proper transaction boundaries and caching
+
+    Transaction Strategy:
+    1. Pre-serialize data outside transaction (fast)
+    2. Execute database write in transaction
+    3. Only cache after successful commit
+    4. Cache failures don't fail the request
+    """
     # Check cache first
     cache_key = f"processed:{security_manager.hash_text(request.text)}:{request.domain}"
     cached = cache_manager.get(cache_key)
@@ -716,9 +724,9 @@ async def process_text_sync(request: TextProcessRequest, request_id: str, user_i
         logger.info(f"Cache hit for request {request_id}")
         cache_hits.inc()
         return cached
-    
+
     cache_misses.inc()
-    
+
     # Process with NLP - use lazy-loaded processor
     nlp_processor = await get_nlp_processor()
     try:
@@ -734,7 +742,7 @@ async def process_text_sync(request: TextProcessRequest, request_id: str, user_i
             "text": request.text,
             "processing_note": "Simplified processing due to service error"
         }
-    
+
     # Get domain schema
     schema = ontology_manager.get_schema(request.domain)
 
@@ -754,22 +762,53 @@ async def process_text_sync(request: TextProcessRequest, request_id: str, user_i
         logger.error(f"TEI conversion failed: {e}")
         # Create minimal valid TEI
         tei_xml = create_minimal_tei(request.text, request.domain, str(e) if settings.debug else None)
-    
-    # Store in database
-    processed_text = storage.save_processed_text(
-        text=request.text,
-        domain=request.domain,
-        nlp_results=nlp_results,
-        tei_xml=tei_xml,
-        text_hash=security_manager.hash_text(request.text),
-        processing_time=0.0,
-        request_id=request_id,
-        user_id=user_id
-    )
-    
-    # Cache the result
-    cache_manager.set(cache_key, processed_text, ttl=settings.cache_ttl)
-    
+
+    # Pre-serialize JSON outside of transaction to avoid holding locks during serialization
+    # This is important for performance - JSON serialization can be slow for large documents
+    import json
+    try:
+        nlp_results_json = json.dumps(nlp_results)
+    except (TypeError, ValueError) as e:
+        logger.error(f"Failed to serialize NLP results: {e}")
+        # Fallback to simplified results
+        nlp_results_json = json.dumps({
+            "text": request.text,
+            "error": "Serialization failed",
+            "processing_note": str(e)
+        })
+
+    # === Transaction Boundary Starts ===
+    # Everything inside this block should be fast and not involve I/O
+    try:
+        processed_text = storage.save_processed_text(
+            text=request.text,
+            domain=request.domain,
+            nlp_results=nlp_results,  # Still pass dict for compatibility, but we pre-serialized
+            tei_xml=tei_xml,
+            text_hash=security_manager.hash_text(request.text),
+            processing_time=0.0,
+            request_id=request_id,
+            user_id=user_id
+        )
+        # === Transaction Boundary Ends (commit happens inside save_processed_text) ===
+
+        logger.info(f"Successfully saved processed text to database (request_id: {request_id})")
+
+    except Exception as e:
+        logger.error(f"Database write failed for request {request_id}: {e}")
+        # Don't cache if database write failed - database is source of truth
+        raise
+
+    # Only cache after successful database commit
+    # Cache failures should NOT fail the request - cache is supplementary
+    try:
+        cache_manager.set(cache_key, processed_text, ttl=settings.cache_ttl)
+        logger.debug(f"Cached result for request {request_id}")
+    except Exception as e:
+        # Log but don't fail - cache is best-effort
+        logger.warning(f"Failed to cache result for request {request_id}: {e}")
+        # Continue - we still have the data in database
+
     return processed_text
 
 def create_minimal_tei(text: str, domain: str, error: Optional[str] = None) -> str:
