@@ -1,0 +1,104 @@
+# Legal Knowledge Bases Configuration
+#
+# This file configures legal knowledge bases for entity enrichment
+
+knowledge_bases:
+  # USC (United States Code)
+  usc:
+    enabled: true
+    provider: "USCProvider"
+    api_key: "${GOVINFO_API_KEY}"  # Optional but recommended
+    priority: 1
+    cache_strategy: "moderate"
+    sync_config:
+      enabled: true
+      frequency: "annual"  # USC updated annually
+      incremental: false  # Full refresh
+      batch_size: 500
+    entity_types:
+      - STATUTE
+      - USC_SECTION
+      - LEGAL_PROVISION
+
+  # CFR (Code of Federal Regulations)
+  cfr:
+    enabled: false  # Enable if needed
+    provider: "CFRProvider"
+    api_key: "${GOVINFO_API_KEY}"
+    priority: 2
+    cache_strategy: "moderate"
+    sync_config:
+      enabled: true
+      frequency: "quarterly"
+      incremental: false
+      batch_size: 500
+    entity_types:
+      - REGULATION
+      - CFR_SECTION
+
+  # CourtListener (Case Law)
+  courtlistener:
+    enabled: true
+    provider: "CourtListenerProvider"
+    api_key: "${COURTLISTENER_API_KEY}"  # Required for higher rate limits
+    priority: 3
+    cache_strategy: "moderate"
+    sync_config:
+      enabled: true
+      frequency: "weekly"  # CourtListener updated frequently
+      incremental: true
+      batch_size: 100
+    entity_types:
+      - CASE_CITATION
+      - OPINION
+      - COURT
+      - JUDGE
+
+# Fallback chain for entity lookups
+fallback_chain:
+  - usc
+  - cfr
+  - courtlistener
+
+# Cache configuration
+cache:
+  memory:
+    max_entities: 5000  # Legal entities are larger
+    eviction_policy: "lru"
+
+  redis:
+    enabled: true
+    url: "${REDIS_URL}"
+    ttl_seconds: 7200  # 2 hours (legal docs change less frequently)
+    connection_pool_size: 30
+
+  postgres:
+    enabled: true
+    url: "${DATABASE_URL}"
+    enable_fulltext_search: true
+    index_case_names: true  # Special index for case names
+
+# Performance tuning
+performance:
+  max_concurrent_lookups: 5  # Legal APIs may have lower rate limits
+  lookup_timeout_seconds: 10  # Legal lookups may be slower
+  retry_failed_lookups: true
+  max_retries: 3
+  retry_backoff_seconds: 2
+
+# Citation parsing
+citation_parsing:
+  enabled: true
+  parsers:
+    - usc  # 18 U.S.C. § 1001
+    - case  # 347 U.S. 483
+    - cfr  # 21 C.F.R. § 312.32
+  auto_resolve: true  # Automatically lookup parsed citations
+
+# Logging
+logging:
+  level: "INFO"
+  log_lookups: true
+  log_cache_hits: true
+  log_sync_progress: true
+  log_citation_parsing: true

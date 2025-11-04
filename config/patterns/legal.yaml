@@ -1,0 +1,322 @@
+#
+# Legal Pattern Matching Configuration
+#
+# This file configures pattern matching for legal domain structured data
+# including statute citations, case citations, regulations, and legal entities.
+#
+
+# Pattern type configuration
+patterns:
+  usc_citation:
+    enabled: true
+    description: "United States Code citations"
+    validation:
+      enabled: true
+      check_title_range: true  # Verify title 1-54
+      check_section_exists: false  # Requires KB lookup
+    normalization:
+      enabled: true
+      standard_format: "18 U.S.C. § 1001"  # Canonical format
+    examples:
+      - "18 U.S.C. § 1001"
+      - "42 USC 1983"
+      - "Title 15, Section 78j"
+
+  case_citation:
+    enabled: true
+    description: "Case law citations"
+    validation:
+      enabled: true
+      check_reporter: true  # Verify valid reporter abbreviation
+      check_year: true      # Verify reasonable year range
+    normalization:
+      enabled: true
+      standard_format: "347 U.S. 483"
+    examples:
+      - "347 U.S. 483"
+      - "410 U.S. 113 (1973)"
+      - "Brown v. Board of Education, 347 U.S. 483"
+
+  case_name:
+    enabled: true
+    description: "Case names (party v. party)"
+    validation:
+      enabled: false
+    normalization:
+      enabled: true
+      title_case: true
+      remove_extra_spaces: true
+    examples:
+      - "Brown v. Board of Education"
+      - "Roe v. Wade"
+      - "Miranda v. Arizona"
+
+  cfr_citation:
+    enabled: true
+    description: "Code of Federal Regulations citations"
+    validation:
+      enabled: true
+      check_title_range: true  # Verify title 1-50
+    normalization:
+      enabled: true
+      standard_format: "21 C.F.R. § 312.32"
+    examples:
+      - "21 C.F.R. § 312.32"
+      - "29 CFR 1910.1200"
+      - "40 C.F.R. Part 61"
+
+  state_code:
+    enabled: true
+    description: "State statutory citations"
+    validation:
+      enabled: false  # Too varied by state
+    normalization:
+      enabled: false
+    examples:
+      - "Cal. Penal Code § 187"
+      - "N.Y. Penal Law § 125.25"
+      - "Tex. Bus. & Com. Code § 17.50"
+
+  court_name:
+    enabled: true
+    description: "Court names"
+    validation:
+      enabled: false
+    normalization:
+      enabled: true
+      standardize_abbreviations: true
+    examples:
+      - "Supreme Court of the United States"
+      - "U.S. Court of Appeals"
+      - "District Court"
+
+# Context rules for disambiguation
+context_rules:
+  - pattern_type: "USC_CITATION"
+    before_keywords:
+      - "pursuant to"
+      - "under"
+      - "violating"
+      - "violation of"
+      - "charged with"
+      - "statute"
+      - "code"
+      - "section"
+      - "title"
+    after_keywords:
+      - "statute"
+      - "provides"
+      - "states"
+      - "violation"
+    confidence_boost: 0.15
+
+  - pattern_type: "CASE_CITATION"
+    before_keywords:
+      - "see"
+      - "see also"
+      - "cited in"
+      - "citing"
+      - "quoting"
+      - "following"
+      - "distinguishing"
+      - "overruling"
+    after_keywords:
+      - "held"
+      - "ruled"
+      - "found"
+      - "concluded"
+    confidence_boost: 0.15
+
+  - pattern_type: "CASE_NAME"
+    before_keywords:
+      - "in"
+      - "case of"
+      - "matter of"
+      - "ex parte"
+    after_keywords:
+      - "held"
+      - "ruled"
+      - "found"
+      - "court"
+      - "decision"
+      - "opinion"
+    confidence_boost: 0.1
+
+  - pattern_type: "CFR_CITATION"
+    before_keywords:
+      - "regulation"
+      - "under"
+      - "pursuant to"
+      - "CFR"
+      - "federal regulation"
+    after_keywords:
+      - "regulation"
+      - "requires"
+      - "provides"
+    confidence_boost: 0.15
+
+  - pattern_type: "COURT_NAME"
+    before_keywords:
+      - "before the"
+      - "filed in"
+      - "appeal to"
+    after_keywords:
+      - "held"
+      - "ruled"
+      - "found"
+      - "ordered"
+    confidence_boost: 0.1
+
+# Validation configuration
+validation:
+  # USC specific validation
+  usc_citation:
+    valid_title_range:
+      min: 1
+      max: 54
+    # Note: Title 53 does not exist
+    excluded_titles: [53]
+
+  # Case citation specific validation
+  case_citation:
+    # Valid reporter abbreviations
+    valid_reporters:
+      # U.S. Supreme Court
+      - "U.S."
+      - "S.Ct."
+      - "L.Ed."
+      - "L.Ed.2d"
+      # Federal Courts of Appeals
+      - "F."
+      - "F.2d"
+      - "F.3d"
+      - "F.4th"
+      # Federal District Courts
+      - "F.Supp."
+      - "F.Supp.2d"
+      - "F.Supp.3d"
+      # State courts (sample)
+      - "Cal.Rptr."
+      - "N.Y.S."
+      - "N.E."
+      - "S.E."
+      - "P."
+      - "P.2d"
+      - "P.3d"
+      - "A."
+      - "A.2d"
+      - "A.3d"
+      - "S.W."
+      - "S.W.2d"
+      - "S.W.3d"
+
+    # Valid year range for cases
+    year_range:
+      min: 1754  # First American case reports
+      max: 2030  # Future cases with reasonable buffer
+
+  # CFR specific validation
+  cfr_citation:
+    valid_title_range:
+      min: 1
+      max: 50
+
+# Normalization configuration
+normalization:
+  # USC citation formats
+  usc_citation:
+    # Convert various formats to canonical
+    # "18 USC 1001" -> "18 U.S.C. § 1001"
+    # "Title 18, Section 1001" -> "18 U.S.C. § 1001"
+    add_periods: true
+    add_section_symbol: true
+    uppercase: true
+
+  # Case citation formats
+  case_citation:
+    # "347 us 483" -> "347 U.S. 483"
+    standardize_reporter: true
+    add_spaces: true
+
+  # CFR citation formats
+  cfr_citation:
+    # "21 CFR 312.32" -> "21 C.F.R. § 312.32"
+    add_periods: true
+    add_section_symbol: true
+    uppercase: true
+
+  # Court name abbreviations
+  court_names:
+    "Supreme Court of the United States": "U.S."
+    "United States Supreme Court": "U.S."
+    "SCOTUS": "U.S."
+    "United States Court of Appeals": "U.S. App."
+    "Court of Appeals": "App."
+    "United States District Court": "U.S. Dist."
+    "District Court": "Dist."
+    "Bankruptcy Court": "Bankr."
+    "Circuit Court": "Cir."
+    "Court of Federal Claims": "Fed. Cl."
+    "Court of International Trade": "Int'l Trade"
+
+  # State abbreviations (for state codes)
+  state_abbreviations:
+    "California": "Cal."
+    "New York": "N.Y."
+    "Texas": "Tex."
+    "Florida": "Fla."
+    "Illinois": "Ill."
+    "Pennsylvania": "Pa."
+    "Ohio": "Ohio"
+    "Georgia": "Ga."
+    "North Carolina": "N.C."
+    "Michigan": "Mich."
+    "New Jersey": "N.J."
+    "Virginia": "Va."
+    "Washington": "Wash."
+    "Arizona": "Ariz."
+    "Massachusetts": "Mass."
+    "Tennessee": "Tenn."
+    "Indiana": "Ind."
+    "Missouri": "Mo."
+    "Maryland": "Md."
+    "Wisconsin": "Wis."
+
+# Priority configuration
+priority:
+  usc_citation: 10
+  case_citation: 10
+  cfr_citation: 10
+  case_name: 8
+  state_code: 8
+  court_name: 6
+
+# Performance tuning
+performance:
+  # Maximum context window for checking surrounding text
+  max_context_window: 100  # characters
+
+  # Enable caching of regex compilation
+  cache_compiled_patterns: true
+
+  # Batch processing configuration
+  batch_size: 1000  # Process text in chunks for very large documents
+
+# Citation linking
+# When enabled, pattern matching will attempt to link citations
+# to knowledge base entities (USC provider, CourtListener, etc.)
+citation_linking:
+  enabled: true
+
+  # Knowledge base mapping
+  kb_mapping:
+    usc_citation: "usc"          # USC KB provider
+    case_citation: "courtlistener"  # CourtListener KB provider
+    cfr_citation: "cfr"          # CFR KB provider (if available)
+
+  # Cache citation lookups
+  cache_lookups: true
+  cache_ttl: 86400  # 24 hours
+
+  # Fallback behavior if KB lookup fails
+  on_lookup_failure: "continue"  # Options: "continue", "skip", "error"
