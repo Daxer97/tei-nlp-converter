@@ -139,15 +139,8 @@ const API = {
             offset: offset
         });
         if (domain) params.append('domain', domain);
-
+        
         return await this.request(`/history?${params}`);
-    },
-
-    /**
-     * Get provider status
-     */
-    getProviderStatus: async function() {
-        return await this.request('/api/nlp/status');
     },
     
     /**
@@ -335,46 +328,29 @@ async function pollTaskStatus(taskId) {
 function displayResults(result, processingTime) {
     // Store current ID
     state.currentProcessedId = result.id;
-
+    
     // Show results section
     document.getElementById('results').style.display = 'block';
-
+    
     // Display processing time
     if (processingTime) {
-        document.getElementById('processing-time').textContent =
+        document.getElementById('processing-time').textContent = 
             `Processed in ${processingTime.toFixed(2)}s`;
     }
-
-    // Display provider information
-    const metadata = result.nlp_results?._metadata || {};
-    const providerName = metadata.provider || 'Unknown';
-    const providerEl = document.getElementById('provider-used');
-    let providerHtml = `Provider: <strong>${SecurityUtils.escapeHtml(providerName)}</strong>`;
-
-    if (metadata.fallback_used) {
-        providerHtml += ' <span class="badge badge-warning" title="Fallback was used">Fallback</span>';
-    }
-
-    if (metadata.features && metadata.features.length > 0) {
-        const features = metadata.features.map(f => SecurityUtils.escapeHtml(f)).join(', ');
-        providerHtml += ` <span class="features-badge" title="${features}">⭐ Enhanced</span>`;
-    }
-
-    providerEl.innerHTML = providerHtml;
-
+    
     // Display NLP results
     displayNLPResults(result.nlp_results);
-
+    
     // Display TEI XML
     const xmlElement = document.getElementById('tei-xml');
     xmlElement.textContent = result.tei_xml;
-
+    
     // Display visualization
     displayVisualization(result.tei_xml);
-
+    
     // Display statistics
     displayStatistics(result.nlp_results);
-
+    
     // Switch to NLP tab
     UI.switchTab('nlp');
 }
@@ -382,88 +358,20 @@ function displayResults(result, processingTime) {
 function displayNLPResults(nlpResults) {
     const container = document.getElementById('nlp-results');
     let html = '';
-
-    // Entities with Google Cloud NLP features
+    
+    // Entities
     if (nlpResults.entities && nlpResults.entities.length > 0) {
         html += '<div class="nlp-section">';
-        html += '<h4>Named Entities';
-
-        // Check if we have Google features
-        const hasGoogleFeatures = nlpResults.entities.some(e =>
-            e.salience !== undefined || e.sentiment !== undefined || e.metadata
-        );
-
-        if (hasGoogleFeatures) {
-            html += ' <span class="badge badge-info" title="Enhanced with Google Cloud NLP">Enhanced ⭐</span>';
-        }
-
-        html += '</h4>';
-
-        // Display entities with enhanced features
-        html += '<div class="entities-enhanced">';
-
+        html += '<h4>Named Entities</h4>';
+        html += '<div class="entities">';
+        
         nlpResults.entities.forEach(entity => {
             const entityClass = getEntityClass(entity.label);
             const text = SecurityUtils.escapeHtml(entity.text);
             const label = SecurityUtils.escapeHtml(entity.label);
-
-            // Build tooltip with all information
-            let tooltip = label;
-            if (entity.salience !== undefined) {
-                const saliencePercent = (entity.salience * 100).toFixed(1);
-                tooltip += `\nImportance: ${saliencePercent}%`;
-            }
-            if (entity.sentiment) {
-                const sentimentLabel = entity.sentiment.score >= 0.25 ? 'Positive' :
-                                      entity.sentiment.score <= -0.25 ? 'Negative' : 'Neutral';
-                tooltip += `\nSentiment: ${sentimentLabel} (${entity.sentiment.score.toFixed(2)})`;
-            }
-            if (entity.mention_type) {
-                tooltip += `\nMention: ${entity.mention_type}`;
-            }
-
-            html += `<div class="entity-card ${entityClass}">`;
-            html += `<span class="entity-text" title="${tooltip}">${text}</span>`;
-            html += `<span class="entity-label">${label}</span>`;
-
-            // Salience indicator
-            if (entity.salience !== undefined) {
-                const salienceLevel = entity.salience >= 0.5 ? 'high' :
-                                     entity.salience >= 0.2 ? 'medium' : 'low';
-                const saliencePercent = (entity.salience * 100).toFixed(0);
-                html += `<span class="salience-badge salience-${salienceLevel}" title="Entity importance: ${saliencePercent}%">`;
-                html += `📊 ${saliencePercent}%</span>`;
-            }
-
-            // Sentiment indicator
-            if (entity.sentiment) {
-                const score = entity.sentiment.score;
-                const sentimentClass = score >= 0.25 ? 'positive' :
-                                      score <= -0.25 ? 'negative' : 'neutral';
-                const sentimentEmoji = score >= 0.25 ? '😊' :
-                                      score <= -0.25 ? '😞' : '😐';
-                html += `<span class="sentiment-badge sentiment-${sentimentClass}" title="Sentiment: ${score.toFixed(2)}">`;
-                html += `${sentimentEmoji}</span>`;
-            }
-
-            // Knowledge Graph links
-            if (entity.metadata) {
-                if (entity.metadata.wikipedia_url) {
-                    const wikiUrl = SecurityUtils.escapeHtml(entity.metadata.wikipedia_url);
-                    html += `<a href="${wikiUrl}" target="_blank" rel="noopener noreferrer" class="kg-link" title="Wikipedia article">`;
-                    html += `📖</a>`;
-                }
-                if (entity.metadata.knowledge_graph_mid) {
-                    const mid = SecurityUtils.escapeHtml(entity.metadata.knowledge_graph_mid);
-                    const kgUrl = `https://www.google.com/search?kgmid=${mid}`;
-                    html += `<a href="${kgUrl}" target="_blank" rel="noopener noreferrer" class="kg-link" title="Knowledge Graph">`;
-                    html += `🔗</a>`;
-                }
-            }
-
-            html += '</div>';
+            html += `<span class="entity ${entityClass}" title="${label}">${text}</span> `;
         });
-
+        
         html += '</div></div>';
     }
     
@@ -779,53 +687,9 @@ async function deleteHistoryItem(id) {
     }
 }
 
-// Load and display provider status
-async function loadProviderStatus() {
-    try {
-        const status = await API.getProviderStatus();
-
-        const badge = document.getElementById('provider-badge');
-        const providerName = status.primary || 'Unknown';
-        const providerHealth = status.provider_status?.[status.primary] || 'unknown';
-
-        let healthEmoji = '❓';
-        let healthClass = 'unknown';
-        if (providerHealth === 'available') {
-            healthEmoji = '✅';
-            healthClass = 'available';
-        } else if (providerHealth === 'degraded') {
-            healthEmoji = '⚠️';
-            healthClass = 'degraded';
-        } else if (providerHealth === 'unavailable') {
-            healthEmoji = '❌';
-            healthClass = 'unavailable';
-        }
-
-        badge.innerHTML = `
-            <span class="provider-name">${SecurityUtils.escapeHtml(providerName)}</span>
-            <span class="provider-health health-${healthClass}" title="Status: ${providerHealth}">${healthEmoji}</span>
-        `;
-
-        // Add fallback info if available
-        if (status.fallbacks && status.fallbacks.length > 0) {
-            const fallbacksText = status.fallbacks.join(', ');
-            badge.title = `Primary: ${providerName}\nFallbacks: ${fallbacksText}`;
-        }
-
-    } catch (error) {
-        console.error('Failed to load provider status:', error);
-        const badge = document.getElementById('provider-badge');
-        badge.innerHTML = `
-            <span class="provider-name">Status unavailable</span>
-            <span class="provider-health health-unknown">❓</span>
-        `;
-    }
-}
-
 // Initialize on DOM load
 document.addEventListener('DOMContentLoaded', () => {
     // Load initial data
-    loadProviderStatus();
     loadHistory();
     
     // Setup event listeners

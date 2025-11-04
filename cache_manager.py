@@ -158,13 +158,11 @@ class CacheManager:
         if key in self.memory_cache:
             item = self.memory_cache[key]
             if item['expires'] > datetime.utcnow():
-                # Update last_accessed for LRU eviction
-                item['last_accessed'] = datetime.utcnow()
                 logger.debug(f"Memory cache hit for key: {key[:30]}...")
                 return item['value']
             else:
                 del self.memory_cache[key]
-
+        
         return None
     
     def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:

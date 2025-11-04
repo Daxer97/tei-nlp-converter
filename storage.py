@@ -29,47 +29,6 @@ class TaskStatus(enum.Enum):
     CANCELLED = "cancelled"
 
 
-class TaskStateMachine:
-    """Validates task status transitions to prevent invalid state changes"""
-
-    # Define valid transitions
-    VALID_TRANSITIONS = {
-        TaskStatus.PENDING: {TaskStatus.PROCESSING, TaskStatus.CANCELLED},
-        TaskStatus.PROCESSING: {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED},
-        TaskStatus.COMPLETED: set(),  # Terminal state - no transitions allowed
-        TaskStatus.FAILED: set(),      # Terminal state - no transitions allowed
-        TaskStatus.CANCELLED: set(),   # Terminal state - no transitions allowed
-    }
-
-    @classmethod
-    def is_valid_transition(cls, from_status: TaskStatus, to_status: TaskStatus) -> bool:
-        """
-        Check if a state transition is valid
-
-        Args:
-            from_status: Current task status
-            to_status: Desired new status
-
-        Returns:
-            True if transition is valid, False otherwise
-        """
-        # Allow same-status "transitions" (idempotent updates)
-        if from_status == to_status:
-            return True
-
-        return to_status in cls.VALID_TRANSITIONS.get(from_status, set())
-
-    @classmethod
-    def is_terminal_state(cls, status: TaskStatus) -> bool:
-        """Check if a status is a terminal state (no transitions allowed)"""
-        return len(cls.VALID_TRANSITIONS.get(status, set())) == 0
-
-    @classmethod
-    def is_active_state(cls, status: TaskStatus) -> bool:
-        """Check if a status represents an active task"""
-        return status in {TaskStatus.PENDING, TaskStatus.PROCESSING}
-
-
 class ProcessedText(Base):
     __tablename__ = 'processed_texts'
     
@@ -93,7 +52,7 @@ class ProcessedText(Base):
 
 class BackgroundTask(Base):
     __tablename__ = 'background_tasks'
-
+    
     id = Column(Integer, primary_key=True, index=True)
     task_id = Column(String(36), unique=True, nullable=False, index=True)
     status = Column(Enum(TaskStatus), nullable=False, default=TaskStatus.PENDING)
@@ -105,8 +64,7 @@ class BackgroundTask(Base):
     completed_at = Column(DateTime)
     retry_count = Column(Integer, default=0)
     request_id = Column(String(36), index=True)
-    version = Column(Integer, default=0, nullable=False)  # Optimistic locking
-
+    
     __table_args__ = (
         Index('idx_task_status_created', 'status', 'created_at'),
         Index('idx_request_id', 'request_id'),
@@ -140,11 +98,11 @@ class Storage:
         """Initialize storage with enhanced connection pooling and thread safety"""
         self.db_url = db_url or settings.get('database_url')
         self._lock = threading.RLock()  # Reentrant lock for thread safety
-
+        
         # Determine if we're using PostgreSQL or SQLite
         self.is_postgresql = 'postgresql' in self.db_url
         self.is_sqlite = 'sqlite' in self.db_url
-
+        
         # PostgreSQL optimized settings
         if self.is_postgresql:
             pool_class = QueuePool
@@ -152,37 +110,9 @@ class Storage:
                 "connect_timeout": 10,
                 "options": "-c statement_timeout=30000"  # 30 second statement timeout
             }
-
-            # Calculate pool size based on worker count to avoid connection exhaustion
-            # With multiple uvicorn workers, each worker gets its own pool
-            # Total connections = workers × (pool_size + max_overflow)
-            # Must stay under PostgreSQL max_connections (typically 100)
-            workers = settings.get('workers', 4)
-            per_worker_pool = settings.get('database_pool_size', 5)  # Conservative: 5 per worker
-            per_worker_overflow = settings.get('database_max_overflow', 5)  # Emergency overflow
-
-            # Log the configuration for debugging
-            total_connections = workers * (per_worker_pool + per_worker_overflow)
-            logger.info(
-                f"Database pool configured: {workers} workers × "
-                f"({per_worker_pool} pool + {per_worker_overflow} overflow) = "
-                f"{total_connections} max total connections"
-            )
-
-            if total_connections > 80:
-                logger.warning(
-                    f"Total database connections ({total_connections}) may exceed "
-                    f"PostgreSQL max_connections limit (typically 100). "
-                    f"Consider reducing pool size or worker count."
-                )
-
-            pool_size = per_worker_pool
-            max_overflow = per_worker_overflow
-
-            # Recycle connections after 30 minutes to avoid stale connections
-            # This is important for long-lived processes
-            pool_recycle = settings.get('database_pool_recycle', 1800)  # 30 minutes
-
+            pool_size = settings.get('database_pool_size', 20)
+            max_overflow = settings.get('database_max_overflow', 40)
+            pool_recycle = settings.get('database_pool_recycle', 3600)
         else:
             # SQLite settings
             pool_class = NullPool  # No pooling for SQLite
@@ -193,14 +123,14 @@ class Storage:
             pool_size = 1
             max_overflow = 0
             pool_recycle = -1
-
+        
         self.engine = create_engine(
             self.db_url,
-            poolclass=pool_class,
+            poolclass=pool_class,    # ✅ correct
             pool_size=pool_size,
             max_overflow=max_overflow,
             pool_recycle=pool_recycle,
-            pool_pre_ping=False,  # Disabled to reduce overhead - use pessimistic disconnect handling
+            pool_pre_ping=True,
             echo=settings.get('debug', False),
             connect_args=connect_args
         )
@@ -277,26 +207,9 @@ class Storage:
         finally:
             session.close()
     
-    def update_task(self, task_id: str, status: TaskStatus,
-                   result: Optional[Dict] = None, error: Optional[str] = None,
-                   expected_version: Optional[int] = None) -> Optional[Tuple[BackgroundTask, bool]]:
-        """
-        Update task status with optimistic locking and state machine validation
-
-        Args:
-            task_id: Task ID to update
-            status: New status
-            result: Task result (optional)
-            error: Error message (optional)
-            expected_version: Expected version for optimistic locking (optional)
-
-        Returns:
-            Tuple of (updated_task, should_decrement_counter) or None if not found
-            should_decrement_counter is True if this update moved task from active to terminal
-
-        Raises:
-            ValueError: If state transition is invalid or version mismatch
-        """
+    def update_task(self, task_id: str, status: TaskStatus, 
+                   result: Optional[Dict] = None, error: Optional[str] = None) -> Optional[BackgroundTask]:
+        """Update task status with proper locking"""
         with self.transaction() as session:
             # Use appropriate locking mechanism based on database
             if self.is_postgresql:
@@ -310,52 +223,22 @@ class Storage:
                 task = session.query(BackgroundTask).filter(
                     BackgroundTask.task_id == task_id
                 ).first()
-
-            if not task:
-                logger.warning(f"Task {task_id} not found for update")
-                return None
-
-            # Optimistic locking: check version if provided
-            if expected_version is not None and task.version != expected_version:
-                raise ValueError(
-                    f"Version mismatch for task {task_id}: "
-                    f"expected {expected_version}, got {task.version}. "
-                    f"Task was modified by another process."
-                )
-
-            # State machine validation
-            old_status = task.status
-            if not TaskStateMachine.is_valid_transition(old_status, status):
-                raise ValueError(
-                    f"Invalid state transition for task {task_id}: "
-                    f"{old_status.value} → {status.value}. "
-                    f"Valid transitions from {old_status.value}: "
-                    f"{[s.value for s in TaskStateMachine.VALID_TRANSITIONS.get(old_status, set())]}"
-                )
-
-            # Determine if we should decrement active task counter
-            # Only decrement if transitioning from active state to terminal state
-            was_active = TaskStateMachine.is_active_state(old_status)
-            is_now_terminal = TaskStateMachine.is_terminal_state(status)
-            should_decrement = was_active and is_now_terminal
-
-            # Update task fields
-            task.status = status
-            task.version += 1  # Increment version for optimistic locking
-
-            if status == TaskStatus.PROCESSING:
-                task.started_at = datetime.utcnow()
-            elif status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
-                task.completed_at = datetime.utcnow()
-                task.result = result
-                task.error = error[:1000] if error else None  # Limit error message length
-
-            session.flush()
-            logger.info(
-                f"Updated task {task_id}: {old_status.value} → {status.value} "
-                f"(version {task.version - 1} → {task.version}, decrement={should_decrement})"
-            )
-            return (task, should_decrement)
+            
+            if task:
+                task.status = status
+                if status == TaskStatus.PROCESSING:
+                    task.started_at = datetime.utcnow()
+                elif status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
+                    task.completed_at = datetime.utcnow()
+                    task.result = result
+                    task.error = error[:1000] if error else None  # Limit error message length
+                
+                session.flush()
+                logger.info(f"Updated task {task_id} to {status.value}")
+                return task
+            
+            logger.warning(f"Task {task_id} not found for update")
+            return None
     
     def get_tasks_by_status(self, status: TaskStatus) -> List[BackgroundTask]:
         """Get tasks by status with proper handling"""

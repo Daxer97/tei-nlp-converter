@@ -12,80 +12,14 @@ class OntologyManager:
     """
     Manages domain-specific ontologies and TEI schemas
     Provides customization for different academic domains
-    Supports provider-aware entity mappings for optimal conversions
     """
-
+    
     def __init__(self, schemas_dir: str = "schemas"):
         self.schemas_dir = Path(schemas_dir)
         self.schemas_dir.mkdir(exist_ok=True)
         self.schemas_cache = {}
-        self._initialize_provider_mappings()
         self._initialize_default_schemas()
         self._load_custom_schemas()
-
-    def _initialize_provider_mappings(self):
-        """Initialize provider-specific entity type to TEI element mappings"""
-        self.provider_entity_mappings = {
-            'google': {
-                'PERSON': 'persName',
-                'LOC': 'placeName',
-                'LOCATION': 'placeName',
-                'ORG': 'orgName',
-                'ORGANIZATION': 'orgName',
-                'EVENT': 'event',
-                'WORK_OF_ART': 'title',
-                'PRODUCT': 'objectName',
-                'CONSUMER_GOOD': 'objectName',
-                'OTHER': 'name',
-                'UNKNOWN': 'name',
-                # Google-specific entities
-                'PHONE': 'num',
-                'PHONE_NUMBER': 'num',
-                'ADDRESS': 'address',
-                'DATE': 'date',
-                'TIME': 'time',
-                'CARDINAL': 'num',
-                'NUMBER': 'num',
-                'MONEY': 'measure',
-                'PRICE': 'measure',
-                'PERCENT': 'measure',
-                'QUANTITY': 'measure',
-                'ORDINAL': 'num',
-                'DEFAULT': 'name'
-            },
-            'spacy': {
-                'PERSON': 'persName',
-                'PER': 'persName',
-                'LOC': 'placeName',
-                'GPE': 'placeName',
-                'FAC': 'placeName',
-                'ORG': 'orgName',
-                'DATE': 'date',
-                'TIME': 'time',
-                'MONEY': 'measure',
-                'QUANTITY': 'measure',
-                'PERCENT': 'measure',
-                'CARDINAL': 'num',
-                'ORDINAL': 'num',
-                'NORP': 'orgName',
-                'PRODUCT': 'objectName',
-                'WORK_OF_ART': 'title',
-                'LAW': 'ref',
-                'LANGUAGE': 'lang',
-                'EVENT': 'event',
-                'DEFAULT': 'name'
-            },
-            'remote': {
-                # Generic mappings for remote server
-                'PERSON': 'persName',
-                'LOC': 'placeName',
-                'ORG': 'orgName',
-                'DATE': 'date',
-                'TIME': 'time',
-                'MONEY': 'measure',
-                'DEFAULT': 'name'
-            }
-        }
     
     def _initialize_default_schemas(self):
         """Initialize built-in domain schemas"""
@@ -439,135 +373,18 @@ class OntologyManager:
         """Validate a schema structure"""
         errors = []
         required_fields = ["domain", "title", "annotation_strategy"]
-
+        
         for field in required_fields:
             if field not in schema:
                 errors.append(f"Missing required field: {field}")
-
+        
         if "annotation_strategy" in schema:
             valid_strategies = ["inline", "standoff", "mixed"]
             if schema["annotation_strategy"] not in valid_strategies:
                 errors.append(f"Invalid annotation_strategy. Must be one of: {', '.join(valid_strategies)}")
-
+        
         if "entity_mappings" in schema:
             if not isinstance(schema["entity_mappings"], dict):
                 errors.append("entity_mappings must be a dictionary")
-
+        
         return len(errors) == 0, errors
-
-    def get_provider_entity_mappings(self, provider: str, domain: str = None) -> Dict[str, str]:
-        """
-        Get provider-specific entity mappings, optionally merged with domain-specific mappings
-
-        Args:
-            provider: NLP provider name ('google', 'spacy', 'remote')
-            domain: Optional domain to merge domain-specific mappings
-
-        Returns:
-            Dictionary of entity type to TEI element mappings
-        """
-        # Start with provider-specific mappings
-        provider_key = provider.lower()
-        mappings = self.provider_entity_mappings.get(provider_key, {}).copy()
-
-        # Merge with domain-specific mappings if domain is provided
-        if domain:
-            schema = self.get_schema(domain)
-            domain_mappings = schema.get('entity_mappings', {})
-            # Domain mappings take precedence
-            mappings.update(domain_mappings)
-
-        # Ensure DEFAULT mapping exists
-        if 'DEFAULT' not in mappings:
-            mappings['DEFAULT'] = 'name'
-
-        return mappings
-
-    def get_provider_capabilities_map(self, provider: str) -> Dict[str, Any]:
-        """
-        Get provider-specific capability information for optimization
-
-        Args:
-            provider: NLP provider name
-
-        Returns:
-            Dictionary describing provider capabilities and optimization hints
-        """
-        capabilities = {
-            'google': {
-                'entity_sentiment': True,
-                'entity_salience': True,
-                'knowledge_graph': True,
-                'rich_morphology': True,
-                'syntax_analysis': True,
-                'text_classification': True,
-                'optimal_for': ['legal', 'scientific', 'historical'],
-                'max_text_length': 1000000,
-                'supports_entities': [
-                    'PERSON', 'LOCATION', 'ORGANIZATION', 'EVENT',
-                    'WORK_OF_ART', 'CONSUMER_GOOD', 'PHONE_NUMBER',
-                    'ADDRESS', 'DATE', 'NUMBER', 'PRICE'
-                ]
-            },
-            'spacy': {
-                'entity_sentiment': False,
-                'entity_salience': False,
-                'knowledge_graph': False,
-                'rich_morphology': True,
-                'syntax_analysis': True,
-                'text_classification': False,
-                'optimal_for': ['literary', 'linguistic', 'general'],
-                'max_text_length': 1000000,
-                'supports_entities': [
-                    'PERSON', 'LOC', 'GPE', 'ORG', 'DATE', 'TIME',
-                    'MONEY', 'PERCENT', 'PRODUCT', 'WORK_OF_ART'
-                ]
-            },
-            'remote': {
-                'entity_sentiment': False,
-                'entity_salience': False,
-                'knowledge_graph': False,
-                'rich_morphology': True,
-                'syntax_analysis': True,
-                'text_classification': False,
-                'optimal_for': ['general'],
-                'max_text_length': 100000,
-                'supports_entities': ['PERSON', 'LOC', 'ORG', 'DATE', 'TIME']
-            }
-        }
-
-        return capabilities.get(provider.lower(), capabilities['spacy'])
-
-    def select_optimal_provider(self, text: str, domain: str) -> str:
-        """
-        Select optimal provider based on text characteristics and domain
-
-        Args:
-            text: The text to be processed
-            domain: The domain schema to use
-
-        Returns:
-            Recommended provider name
-        """
-        text_length = len(text)
-        schema = self.get_schema(domain)
-
-        # Legal domain benefits from Google's precision
-        if domain in ['legal', 'scientific', 'historical']:
-            if text_length <= 1000000:  # Google's limit
-                return 'google'
-
-        # Linguistic analysis works well with SpaCy
-        if domain in ['linguistic', 'literary']:
-            return 'spacy'
-
-        # For very long texts, prefer local processing
-        if text_length > 100000:
-            return 'spacy'
-
-        # Default recommendation based on domain requirements
-        if schema.get('include_morph') or schema.get('detailed_tokens'):
-            return 'spacy'
-
-        # Google for rich entity analysis
-        return 'google'
