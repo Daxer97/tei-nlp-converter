@@ -1,0 +1,232 @@
+groups:
+  - name: nlp_pipeline_alerts
+    interval: 30s
+    rules:
+      - alert: HighPipelineLatency
+        expr: histogram_quantile(0.95, rate(pipeline_latency_seconds_bucket[5m])) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          component: pipeline
+        annotations:
+          summary: "High NLP pipeline latency (p95 > 1s)"
+          description: "Pipeline {{$labels.domain}} p95 latency is {{$value}}s (threshold: 1s)"
+
+      - alert: CriticalPipelineLatency
+        expr: histogram_quantile(0.95, rate(pipeline_latency_seconds_bucket[5m])) > 2.0
+        for: 2m
+        labels:
+          severity: critical
+          component: pipeline
+        annotations:
+          summary: "Critical NLP pipeline latency (p95 > 2s)"
+          description: "Pipeline {{$labels.domain}} p95 latency is {{$value}}s (threshold: 2s)"
+
+      - alert: LowPipelineSuccessRate
+        expr: |
+          sum(rate(pipeline_completed_total[5m])) /
+          sum(rate(pipeline_started_total[5m])) < 0.95
+        for: 5m
+        labels:
+          severity: warning
+          component: pipeline
+        annotations:
+          summary: "Low pipeline success rate (<95%)"
+          description: "Pipeline success rate is {{$value | humanizePercentage}}"
+
+      - alert: HighPipelineErrorRate
+        expr: rate(pipeline_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          component: pipeline
+        annotations:
+          summary: "High pipeline error rate"
+          description: "Pipeline error rate is {{$value}} errors/sec (threshold: 0.1)"
+
+  - name: model_alerts
+    interval: 1m
+    rules:
+      - alert: ModelLoadFailed
+        expr: increase(model_load_failures_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: model
+        annotations:
+          summary: "Model failed to load"
+          description: "Model {{$labels.model_id}} failed to load ({{$value}} failures in 5m)"
+
+      - alert: HighModelErrorRate
+        expr: rate(model_errors_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: model
+        annotations:
+          summary: "High model error rate"
+          description: "Model {{$labels.model_id}} error rate is {{$value}} errors/sec"
+
+      - alert: LowEnsembleAgreement
+        expr: avg(ensemble_agreement_ratio) < 0.5
+        for: 10m
+        labels:
+          severity: warning
+          component: model
+        annotations:
+          summary: "Low ensemble model agreement"
+          description: "Ensemble agreement ratio is {{$value | humanizePercentage}} (threshold: 50%)"
+
+      - alert: ModelAccuracyDropped
+        expr: |
+          (model_accuracy_f1_score - model_accuracy_f1_score offset 1h) < -0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: model
+        annotations:
+          summary: "Model accuracy dropped significantly"
+          description: "Model {{$labels.model_id}} F1 score dropped by {{$value | humanizePercentage}} in last hour"
+
+  - name: knowledge_base_alerts
+    interval: 1m
+    rules:
+      - alert: LowKBCacheHitRate
+        expr: |
+          sum(rate(kb_cache_hits_total[5m])) by (kb_id) /
+          (sum(rate(kb_cache_hits_total[5m])) by (kb_id) +
+           sum(rate(kb_cache_misses_total[5m])) by (kb_id)) < 0.6
+        for: 10m
+        labels:
+          severity: warning
+          component: knowledge_base
+        annotations:
+          summary: "Low KB cache hit rate"
+          description: "KB {{$labels.kb_id}} cache hit rate is {{$value | humanizePercentage}} (threshold: 60%)"
+
+      - alert: HighKBLookupLatency
+        expr: histogram_quantile(0.95, rate(kb_lookup_duration_seconds_bucket[5m])) > 5.0
+        for: 5m
+        labels:
+          severity: warning
+          component: knowledge_base
+        annotations:
+          summary: "High KB lookup latency"
+          description: "KB {{$labels.kb_id}} p95 lookup latency is {{$value}}s (threshold: 5s)"
+
+      - alert: KBSyncFailed
+        expr: increase(kb_sync_failures_total[1h]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          component: knowledge_base
+        annotations:
+          summary: "KB sync failed"
+          description: "KB {{$labels.kb_id}} sync failed ({{$value}} failures in last hour)"
+
+      - alert: KBEnrichmentLowSuccessRate
+        expr: |
+          sum(rate(kb_enrichments_successful_total[5m])) /
+          sum(rate(kb_enrichments_attempted_total[5m])) < 0.7
+        for: 10m
+        labels:
+          severity: warning
+          component: knowledge_base
+        annotations:
+          summary: "Low KB enrichment success rate"
+          description: "KB enrichment success rate is {{$value | humanizePercentage}} (threshold: 70%)"
+
+  - name: system_alerts
+    interval: 1m
+    rules:
+      - alert: HighMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{$value | humanizePercentage}} (threshold: 85%)"
+
+      - alert: HighCPUUsage
+        expr: |
+          100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{$value}}% (threshold: 80%)"
+
+      - alert: DiskSpaceLow
+        expr: |
+          (node_filesystem_avail_bytes / node_filesystem_size_bytes) < 0.15
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "Low disk space"
+          description: "Disk space available is {{$value | humanizePercentage}} (threshold: 15%)"
+
+  - name: hot_swap_alerts
+    interval: 1m
+    rules:
+      - alert: HotSwapFailed
+        expr: increase(hot_swap_failed_total[10m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: hot_swap
+        annotations:
+          summary: "Hot swap operation failed"
+          description: "Hot swap failed for {{$labels.component_type}}:{{$labels.component_id}}"
+
+      - alert: HotSwapRollbackOccurred
+        expr: increase(hot_swap_rollback_total[10m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          component: hot_swap
+        annotations:
+          summary: "Hot swap rollback occurred"
+          description: "Rollback triggered for {{$labels.component_type}}:{{$labels.component_id}}"
+
+  - name: auto_discovery_alerts
+    interval: 5m
+    rules:
+      - alert: CanaryDeploymentFailed
+        expr: increase(canary_deployment_failed_total[1h]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          component: auto_discovery
+        annotations:
+          summary: "Canary deployment failed"
+          description: "Canary deployment failed for {{$labels.component_id}}"
+
+      - alert: ModelDiscoveryFailed
+        expr: increase(model_discovery_failed_total[24h]) > 3
+        for: 1m
+        labels:
+          severity: warning
+          component: auto_discovery
+        annotations:
+          summary: "Multiple model discovery failures"
+          description: "Model discovery failed {{$value}} times in last 24 hours"
+
+  - name: feature_flag_alerts
+    interval: 1m
+    rules:
+      - alert: FeatureFlagKillSwitchActivated
+        expr: feature_flag_kill_switch_active > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: feature_flags
+        annotations:
+          summary: "Feature flag kill switch activated"
+          description: "Kill switch activated for {{$labels.flag_name}}: {{$labels.reason}}"
