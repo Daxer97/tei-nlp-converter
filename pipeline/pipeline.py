@@ -317,70 +317,395 @@ class Pipeline:
         text: str,
         domain: Optional[str]
     ) -> List[EntityResult]:
-        """Run NER stage"""
+        """Run NER stage with actual model integration"""
         entities = []
 
         if not self._ner_registry:
+            logger.warning("NER registry not initialized")
             return entities
 
-        # TODO: In full implementation, would:
-        # 1. Select optimal models based on domain and config
-        # 2. Run models (ensemble if configured)
-        # 3. Convert results to EntityResult format
-        # 4. Filter by confidence threshold
+        try:
+            # 1. Discover and select optimal models for domain
+            catalog = await self._ner_registry.discover_all_models(domain)
 
-        # Placeholder implementation
-        logger.debug(f"Running NER with models: {self.config.ner_model_ids}")
+            if not catalog or not any(catalog.values()):
+                logger.warning(f"No models available for domain: {domain}")
+                return entities
 
-        # Simulated NER results
-        # In production, would call actual models
-        return entities
+            # Get selection criteria from config
+            from ner_models.base import SelectionCriteria
+            criteria = SelectionCriteria(
+                min_f1_score=0.70,  # Minimum acceptable F1 score
+                max_latency_ms=500,  # Maximum latency
+                preferred_providers=["spacy", "huggingface"],
+                entity_types=self._get_entity_types_for_domain(domain),
+                languages=["en"],
+                min_models=1,
+                max_models=3 if self.config.ner_ensemble_mode else 1,
+                require_trusted=self.config.enable_trust_validation
+            )
+
+            optimal_models = self._ner_registry.get_optimal_models(catalog, criteria)
+
+            if not optimal_models:
+                logger.warning(f"No models match criteria for domain: {domain}")
+                return entities
+
+            logger.info(f"Selected {len(optimal_models)} models for domain {domain}")
+
+            # 2. Load models
+            loaded_models = []
+            for model_metadata in optimal_models:
+                model = await self._ner_registry.load_model(
+                    model_metadata.provider,
+                    model_metadata.model_id,
+                    model_metadata.version
+                )
+                if model:
+                    loaded_models.append((model, model_metadata))
+                    logger.debug(f"Loaded model: {model_metadata.model_id}")
+
+            if not loaded_models:
+                logger.error("Failed to load any models")
+                return entities
+
+            # 3. Run ensemble extraction if multiple models
+            if self.config.ner_ensemble_mode and len(loaded_models) > 1:
+                entities = await self._ensemble_extraction(text, loaded_models)
+                logger.info(f"Ensemble extraction completed: {len(entities)} entities")
+            else:
+                # Single model extraction
+                model, metadata = loaded_models[0]
+                raw_entities = await model.extract_entities(text)
+                entities = self._convert_to_entity_results(
+                    raw_entities,
+                    metadata,
+                    ProcessingStage.NER
+                )
+                logger.info(f"Single model extraction: {len(entities)} entities")
+
+            # 4. Filter by confidence threshold
+            initial_count = len(entities)
+            entities = [
+                e for e in entities
+                if e.confidence >= self.config.ner_min_confidence
+            ]
+
+            if initial_count != len(entities):
+                logger.debug(
+                    f"Filtered {initial_count - len(entities)} low-confidence entities "
+                    f"(threshold: {self.config.ner_min_confidence})"
+                )
+
+            return entities
+
+        except Exception as e:
+            logger.error(f"NER stage failed: {e}", exc_info=True)
+            return []
+
+    async def _ensemble_extraction(
+        self,
+        text: str,
+        models: List[Tuple[Any, Any]]  # List[(NERModel, ModelMetadata)]
+    ) -> List[EntityResult]:
+        """Run ensemble extraction with majority voting"""
+        from collections import Counter, defaultdict
+
+        logger.debug(f"Running ensemble extraction with {len(models)} models")
+
+        # Extract from all models in parallel
+        tasks = [
+            model.extract_entities(text)
+            for model, _ in models
+        ]
+
+        try:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+        except Exception as e:
+            logger.error(f"Ensemble extraction failed: {e}")
+            return []
+
+        # Filter out exceptions
+        valid_results = []
+        for idx, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.warning(f"Model {models[idx][1].model_id} failed: {result}")
+            else:
+                valid_results.append((result, models[idx][1]))
+
+        if not valid_results:
+            logger.error("All models failed in ensemble")
+            return []
+
+        # Group entities by span (start, end)
+        span_groups = defaultdict(list)
+
+        for entities, metadata in valid_results:
+            converted = self._convert_to_entity_results(
+                entities,
+                metadata,
+                ProcessingStage.NER
+            )
+
+            for entity in converted:
+                span_key = (entity.start, entity.end)
+                span_groups[span_key].append(entity)
+
+        # Voting: majority vote on entity type
+        consolidated = []
+
+        for span, entity_list in span_groups.items():
+            # Count votes for each entity type
+            type_votes = Counter([e.type for e in entity_list])
+            winning_type, vote_count = type_votes.most_common(1)[0]
+
+            # Calculate average confidence
+            avg_confidence = sum(e.confidence for e in entity_list) / len(entity_list)
+
+            # Boost confidence if multiple models agree
+            agreement_boost = (vote_count / len(entity_list)) * 0.1
+            final_confidence = min(1.0, avg_confidence + agreement_boost)
+
+            # Use first entity for text
+            entity = entity_list[0]
+
+            # Create consolidated entity
+            result = EntityResult(
+                text=entity.text,
+                type=winning_type,
+                start=span[0],
+                end=span[1],
+                confidence=final_confidence,
+                source_stage=ProcessingStage.NER,
+                source_model=f"ensemble_{len(entity_list)}_models",
+                metadata={
+                    'models': [e.source_model for e in entity_list],
+                    'votes': dict(type_votes),
+                    'agreement_ratio': vote_count / len(entity_list)
+                }
+            )
+            consolidated.append(result)
+
+        logger.debug(
+            f"Ensemble consolidation: {sum(len(v) for v in span_groups.values())} → "
+            f"{len(consolidated)} entities"
+        )
+
+        return consolidated
+
+    def _convert_to_entity_results(
+        self,
+        raw_entities: List[Any],
+        metadata: Any,
+        stage: ProcessingStage
+    ) -> List[EntityResult]:
+        """Convert model-specific entity format to EntityResult"""
+        results = []
+
+        for entity in raw_entities:
+            # Handle different entity formats
+            if hasattr(entity, 'text'):
+                text = entity.text
+            elif isinstance(entity, dict):
+                text = entity.get('text', '')
+            else:
+                text = str(entity)
+
+            if hasattr(entity, 'label'):
+                entity_type = entity.label
+            elif isinstance(entity, dict):
+                entity_type = entity.get('label', 'UNKNOWN')
+            else:
+                entity_type = 'UNKNOWN'
+
+            if hasattr(entity, 'start'):
+                start = entity.start
+            elif isinstance(entity, dict):
+                start = entity.get('start', 0)
+            else:
+                start = 0
+
+            if hasattr(entity, 'end'):
+                end = entity.end
+            elif isinstance(entity, dict):
+                end = entity.get('end', len(text))
+            else:
+                end = len(text)
+
+            if hasattr(entity, 'confidence'):
+                confidence = entity.confidence
+            elif isinstance(entity, dict):
+                confidence = entity.get('confidence', 0.8)
+            else:
+                confidence = 0.8
+
+            result = EntityResult(
+                text=text,
+                type=entity_type,
+                start=start,
+                end=end,
+                confidence=confidence,
+                source_stage=stage,
+                source_model=metadata.model_id if hasattr(metadata, 'model_id') else 'unknown'
+            )
+
+            results.append(result)
+
+        return results
+
+    def _get_entity_types_for_domain(self, domain: Optional[str]) -> List[str]:
+        """Get expected entity types for a domain"""
+        if domain == "medical":
+            return ["DRUG", "DISEASE", "PROCEDURE", "CHEMICAL", "ANATOMY", "SYMPTOM"]
+        elif domain == "legal":
+            return ["CASE_CITATION", "STATUTE", "COURT", "LEGAL_ENTITY", "LAW"]
+        elif domain == "scientific":
+            return ["CHEMICAL", "GENE", "PROTEIN", "SPECIES", "MEASUREMENT"]
+        else:
+            return ["PERSON", "ORG", "LOC", "DATE", "MONEY"]
 
     async def _run_kb_enrichment_stage(
         self,
         entities: List[EntityResult],
         domain: Optional[str]
     ) -> List[EntityResult]:
-        """Run knowledge base enrichment stage"""
-        enriched = []
-
+        """Run knowledge base enrichment stage with real KB providers"""
         if not self._kb_registry:
-            return enriched
+            logger.warning("KB registry not initialized, skipping enrichment")
+            return entities
 
-        # Filter entities for enrichment
-        entities_to_enrich = entities
-        if not self.config.kb_enrich_all:
-            entities_to_enrich = [
-                e for e in entities
-                if e.confidence >= self.config.kb_min_confidence_for_enrichment
-            ]
+        if not entities:
+            return entities
 
-        logger.debug(f"Enriching {len(entities_to_enrich)} entities from {len(entities)} total")
+        try:
+            # Filter entities for enrichment based on confidence
+            entities_to_enrich = entities
+            if not self.config.kb_enrich_all:
+                entities_to_enrich = [
+                    e for e in entities
+                    if e.confidence >= self.config.kb_min_confidence_for_enrichment
+                ]
 
-        # TODO: In full implementation, would:
-        # 1. Look up each entity in relevant KBs
-        # 2. Add canonical names, definitions, relationships
-        # 3. Respect concurrency limits
-        # 4. Handle timeouts
-
-        # Placeholder implementation
-        for entity in entities_to_enrich:
-            # Simulated KB lookup
-            # In production, would call actual KB providers
-            enriched_entity = EntityResult(
-                text=entity.text,
-                type=entity.type,
-                start=entity.start,
-                end=entity.end,
-                confidence=entity.confidence,
-                source_stage=ProcessingStage.KB_ENRICHMENT,
-                source_model=entity.source_model,
-                # KB enrichment would add:
-                # kb_id, kb_entity_id, canonical_name, definition, etc.
+            logger.debug(
+                f"Enriching {len(entities_to_enrich)} entities from {len(entities)} total "
+                f"(threshold: {self.config.kb_min_confidence_for_enrichment})"
             )
-            enriched.append(enriched_entity)
 
-        return enriched
+            if not entities_to_enrich:
+                return entities
+
+            # Get KB fallback chain for domain
+            kb_chain = self._get_kb_chain_for_domain(domain)
+
+            if not kb_chain:
+                logger.debug(f"No KB chain configured for domain: {domain}")
+                return entities
+
+            logger.info(f"Using KB chain: {kb_chain}")
+
+            # Create semaphore for concurrency control
+            semaphore = asyncio.Semaphore(self.config.max_concurrent_kb_lookups)
+
+            async def enrich_entity(entity: EntityResult) -> EntityResult:
+                """Enrich a single entity with KB data"""
+                async with semaphore:
+                    # Try each KB in the fallback chain
+                    for kb_id in kb_chain:
+                        try:
+                            kb_provider = self._kb_registry.get_provider(kb_id)
+                            if not kb_provider:
+                                logger.debug(f"KB provider not found: {kb_id}")
+                                continue
+
+                            # Lookup entity in KB
+                            kb_entity = await asyncio.wait_for(
+                                kb_provider.lookup_entity(entity.text, entity.type),
+                                timeout=5.0  # 5 second timeout per KB lookup
+                            )
+
+                            if kb_entity:
+                                # Enrich the entity with KB data
+                                entity.kb_id = kb_id
+                                entity.kb_entity_id = kb_entity.entity_id if hasattr(kb_entity, 'entity_id') else None
+                                entity.canonical_name = kb_entity.canonical_name if hasattr(kb_entity, 'canonical_name') else None
+                                entity.definition = kb_entity.definition if hasattr(kb_entity, 'definition') else None
+
+                                if hasattr(kb_entity, 'semantic_types'):
+                                    entity.semantic_types = kb_entity.semantic_types
+
+                                # Add relationships to metadata
+                                if hasattr(kb_entity, 'relationships'):
+                                    if 'kb_relationships' not in entity.metadata:
+                                        entity.metadata['kb_relationships'] = {}
+                                    entity.metadata['kb_relationships'][kb_id] = kb_entity.relationships
+
+                                # Add alternative names
+                                if hasattr(kb_entity, 'alternative_names'):
+                                    entity.metadata['alternative_names'] = kb_entity.alternative_names
+
+                                logger.debug(
+                                    f"Enriched '{entity.text}' with {kb_id}: "
+                                    f"{entity.canonical_name or 'N/A'}"
+                                )
+
+                                # Successfully enriched, break fallback chain
+                                break
+
+                        except asyncio.TimeoutError:
+                            logger.warning(f"KB lookup timeout for {kb_id}: {entity.text}")
+                            continue
+
+                        except Exception as e:
+                            logger.warning(
+                                f"KB lookup failed for {kb_id} (entity: '{entity.text}'): {e}"
+                            )
+                            continue
+
+                    return entity
+
+            # Enrich all entities in parallel (with concurrency limit)
+            enriched = await asyncio.gather(*[
+                enrich_entity(entity) for entity in entities_to_enrich
+            ])
+
+            # Create set of enriched entity IDs
+            enriched_ids = {id(e) for e in entities_to_enrich}
+
+            # Combine enriched and non-enriched entities
+            result = []
+            for entity in entities:
+                if id(entity) in enriched_ids:
+                    # Find the enriched version
+                    enriched_entity = next(
+                        (e for e in enriched if e.text == entity.text and e.start == entity.start),
+                        entity
+                    )
+                    result.append(enriched_entity)
+                else:
+                    result.append(entity)
+
+            # Count how many were actually enriched
+            enriched_count = sum(1 for e in result if e.kb_id is not None)
+            logger.info(
+                f"KB enrichment completed: {enriched_count}/{len(entities_to_enrich)} entities enriched"
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"KB enrichment stage failed: {e}", exc_info=True)
+            return entities  # Return original entities on failure
+
+    def _get_kb_chain_for_domain(self, domain: Optional[str]) -> List[str]:
+        """Get KB fallback chain for a domain"""
+        if domain == "medical":
+            return ["umls", "rxnorm", "snomed"]
+        elif domain == "legal":
+            return ["usc", "courtlistener", "cfr"]
+        elif domain == "scientific":
+            return ["umls", "pubchem"]
+        else:
+            return []
 
     async def _run_pattern_matching_stage(
         self,
