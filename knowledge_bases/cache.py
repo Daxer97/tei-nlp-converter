@@ -5,10 +5,11 @@ Implements a three-tier caching hierarchy:
 1. L1: In-memory LRU cache (fastest, limited size)
 2. L2: Redis cache (fast, shared across instances)
 3. L3: PostgreSQL (persistent, searchable)
+
+Security: Uses JSON serialization instead of pickle to prevent arbitrary code execution
 """
 from typing import Optional, List, Dict, Any
 import asyncio
-import pickle
 import json
 from datetime import datetime
 from collections import OrderedDict
@@ -233,7 +234,9 @@ class MultiTierCacheManager:
             try:
                 redis_data = await self.redis.get(cache_key)
                 if redis_data:
-                    entity = pickle.loads(redis_data)
+                    # Deserialize from JSON
+                    entity_dict = json.loads(redis_data.decode('utf-8') if isinstance(redis_data, bytes) else redis_data)
+                    entity = self._deserialize_entity(entity_dict)
                     lookup_time = (asyncio.get_event_loop().time() - start_time) * 1000
                     self.stats['redis_hits'] += 1
 
@@ -276,7 +279,7 @@ class MultiTierCacheManager:
                                 await self.redis.setex(
                                     cache_key,
                                     self.redis_ttl,
-                                    pickle.dumps(entity)
+                                    json.dumps(entity.to_dict()).encode('utf-8')
                                 )
                             except Exception as e:
                                 logger.error(f"Redis set error: {e}")
@@ -333,7 +336,7 @@ class MultiTierCacheManager:
                 await self.redis.setex(
                     cache_key,
                     self.redis_ttl,
-                    pickle.dumps(entity)
+                    json.dumps(entity.to_dict()).encode('utf-8')
                 )
             except Exception as e:
                 logger.error(f"Redis set error: {e}")
@@ -432,7 +435,7 @@ class MultiTierCacheManager:
                         entity.canonical_name,
                         entity.entity_type
                     )
-                    pipe.setex(cache_key, self.redis_ttl, pickle.dumps(entity))
+                    pipe.setex(cache_key, self.redis_ttl, json.dumps(entity.to_dict()).encode('utf-8'))
 
                 await pipe.execute()
 
