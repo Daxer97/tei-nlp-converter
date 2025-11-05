@@ -668,19 +668,19 @@ class Pipeline:
                 enrich_entity(entity) for entity in entities_to_enrich
             ])
 
-            # Create set of enriched entity IDs
-            enriched_ids = {id(e) for e in entities_to_enrich}
+            # Create dictionary mapping using stable keys (not id() which can be reused)
+            enriched_map = {}
+            for i, entity in enumerate(entities_to_enrich):
+                key = (entity.start, entity.end, entity.text.lower(), entity.type)
+                enriched_map[key] = enriched[i]
 
             # Combine enriched and non-enriched entities
             result = []
             for entity in entities:
-                if id(entity) in enriched_ids:
-                    # Find the enriched version
-                    enriched_entity = next(
-                        (e for e in enriched if e.text == entity.text and e.start == entity.start),
-                        entity
-                    )
-                    result.append(enriched_entity)
+                key = (entity.start, entity.end, entity.text.lower(), entity.type)
+                if key in enriched_map:
+                    # Use the enriched version
+                    result.append(enriched_map[key])
                 else:
                     result.append(entity)
 

@@ -4,6 +4,9 @@ Security utilities and middleware
 import re
 import hashlib
 import secrets
+import hmac
+import asyncio
+import random
 from typing import Optional, Dict, Any
 from fastapi import HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -109,9 +112,13 @@ class APIKeyAuth(HTTPBearer):
     async def __call__(self, request: Request) -> Optional[HTTPAuthorizationCredentials]:
         if not self.api_key:
             return None
-            
+
         credentials = await super().__call__(request)
-        if credentials.credentials != self.api_key:
+
+        # Use constant-time comparison to prevent timing attacks
+        if not hmac.compare_digest(credentials.credentials, self.api_key):
+            # Add random delay to further obfuscate timing
+            await asyncio.sleep(random.uniform(0.01, 0.05))
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid API key"
