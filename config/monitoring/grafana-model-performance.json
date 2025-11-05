@@ -1,0 +1,216 @@
+{
+  "dashboard": {
+    "title": "Model Performance Comparison",
+    "tags": ["nlp", "models", "performance"],
+    "timezone": "browser",
+    "schemaVersion": 27,
+    "version": 1,
+    "refresh": "1m",
+    "panels": [
+      {
+        "id": 1,
+        "gridPos": {"h": 9, "w": 12, "x": 0, "y": 0},
+        "type": "graph",
+        "title": "Model Latency Comparison",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(model_extraction_duration_seconds_bucket[5m]))",
+            "legendFormat": "{{model_id}} - p95"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(model_extraction_duration_seconds_bucket[5m]))",
+            "legendFormat": "{{model_id}} - p50"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "s",
+            "label": "Latency"
+          }
+        ],
+        "legend": {
+          "show": true,
+          "alignAsTable": true,
+          "avg": true,
+          "current": true
+        }
+      },
+      {
+        "id": 2,
+        "gridPos": {"h": 9, "w": 12, "x": 12, "y": 0},
+        "type": "graph",
+        "title": "Model Throughput",
+        "targets": [
+          {
+            "expr": "rate(model_predictions_total[5m])",
+            "legendFormat": "{{model_id}}"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ops",
+            "label": "Predictions/second"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "gridPos": {"h": 9, "w": 12, "x": 0, "y": 9},
+        "type": "graph",
+        "title": "Model Accuracy (F1 Score)",
+        "targets": [
+          {
+            "expr": "model_accuracy_f1_score",
+            "legendFormat": "{{model_id}}"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "short",
+            "label": "F1 Score",
+            "max": 1.0,
+            "min": 0
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "gridPos": {"h": 9, "w": 12, "x": 12, "y": 9},
+        "type": "graph",
+        "title": "Ensemble Agreement Rate",
+        "targets": [
+          {
+            "expr": "avg(ensemble_agreement_ratio)",
+            "legendFormat": "Agreement Ratio"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "percentunit",
+            "label": "Agreement",
+            "max": 1.0,
+            "min": 0
+          }
+        ],
+        "alert": {
+          "name": "Low Ensemble Agreement",
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [0.5],
+                "type": "lt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "reducer": {
+                "params": [],
+                "type": "avg"
+              },
+              "type": "query"
+            }
+          ],
+          "frequency": "1m",
+          "message": "Ensemble model agreement is below 50%, indicating potential model issues"
+        }
+      },
+      {
+        "id": 5,
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 18},
+        "type": "table",
+        "title": "Active Models Summary",
+        "targets": [
+          {
+            "expr": "group(model_info) by (model_id, provider, domain, version)",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {"Time": true, "Value": true},
+              "indexByName": {
+                "model_id": 0,
+                "provider": 1,
+                "domain": 2,
+                "version": 3
+              }
+            }
+          }
+        ],
+        "options": {
+          "showHeader": true
+        }
+      },
+      {
+        "id": 6,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 26},
+        "type": "graph",
+        "title": "Model Load/Unload Events",
+        "targets": [
+          {
+            "expr": "increase(model_loaded_total[1h])",
+            "legendFormat": "Loaded: {{model_id}}"
+          },
+          {
+            "expr": "increase(model_unloaded_total[1h])",
+            "legendFormat": "Unloaded: {{model_id}}"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "short",
+            "label": "Events"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 26},
+        "type": "graph",
+        "title": "Model Error Rate",
+        "targets": [
+          {
+            "expr": "rate(model_errors_total[5m])",
+            "legendFormat": "{{model_id}}"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ops",
+            "label": "Errors/second"
+          }
+        ],
+        "alert": {
+          "name": "High Model Error Rate",
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [0.1],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "reducer": {
+                "params": [],
+                "type": "avg"
+              },
+              "type": "query"
+            }
+          ],
+          "frequency": "1m",
+          "message": "Model {{model_id}} error rate is above 0.1 errors/sec"
+        }
+      }
+    ]
+  }
+}

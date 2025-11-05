@@ -15,9 +15,8 @@ import io
 import json
 import uuid
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 from contextlib import asynccontextmanager
-import traceback
 
 # Rate limiting
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -49,7 +48,7 @@ from metrics import (
     cache_misses,
     get_metrics
 )
-from circuit_breaker import CircuitBreaker, CircuitBreakerError
+from circuit_breaker import CircuitBreakerError
 
 # Initialize logger with request context
 logger = get_logger(__name__)
@@ -114,16 +113,16 @@ class PersistentTaskManager:
         self._last_count_update = datetime.utcnow()
         self.max_concurrent_tasks = settings.get('max_concurrent_tasks', 10)
         self._lock = asyncio.Lock()
-    
-    @property
-    async def active_task_count(self) -> int:
+
+    async def get_active_task_count(self) -> int:
         """Get active task count with caching"""
         async with self._lock:
             # Cache the count for 5 seconds to reduce DB queries
-            if (datetime.utcnow() - self._last_count_update).seconds > 5:
+            now = datetime.utcnow()
+            if (now - self._last_count_update).total_seconds() > 5:
                 stats = self.storage.get_statistics()
                 self._active_count_cache = stats.get('active_tasks', 0)
-                self._last_count_update = datetime.utcnow()
+                self._last_count_update = now
             return self._active_count_cache
     
     def create_task(self, task_id: str, data: Dict[str, Any], 
@@ -539,8 +538,7 @@ async def home(request: Request):
         "csrf_token": csrf_token,
         "environment": settings.environment
     })
-    
-    # Set secure CSRF cookie
+
     # Set secure CSRF cookie
     response.set_cookie(
         "csrf_token",
@@ -574,7 +572,7 @@ async def process_text(
     
     try:
         # Check concurrent task limit
-        if await task_manager.active_task_count >= settings.get('max_concurrent_tasks', 10):
+        if await task_manager.get_active_task_count() >= settings.get('max_concurrent_tasks', 10):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Server at capacity, please try again later"
@@ -807,11 +805,11 @@ async def upload_and_process(
     file: UploadFile = File(...),
     domain: str = Form("default"),
     background_tasks: BackgroundTasks = None,
-    request: Request = None,
+    http_request: Request = None,
     auth_result = Depends(auth) if settings.require_auth else None
 ):
     """Upload a file and process it"""
-    request_id = getattr(req.state, "request_id", str(uuid.uuid4()))
+    request_id = getattr(http_request.state, "request_id", str(uuid.uuid4()))
     
     # Validate file type
     if not security_manager.validate_file_type(file.filename):
@@ -838,8 +836,8 @@ async def upload_and_process(
         )
     
     # Process as regular text
-    request = TextProcessRequest(text=text, domain=domain)
-    return await process_text(request, background_tasks, req, auth_result)
+    text_request = TextProcessRequest(text=text, domain=domain)
+    return await process_text(text_request, background_tasks, http_request, auth_result)
 
 @app.get("/download/{text_id}", tags=["Processing"])
 async def download_tei(
@@ -1010,7 +1008,7 @@ async def get_statistics(
     
     stats = storage.get_statistics()
     stats.update({
-        "active_tasks": await task_manager.active_task_count(),
+        "active_tasks": await task_manager.get_active_task_count(),
         "user_texts": storage.count_texts_by_user(user_id),
         "cache": cache_manager.get_stats()
     })

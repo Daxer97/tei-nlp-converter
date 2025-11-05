@@ -3,7 +3,6 @@ Local SpaCy NLP provider - Fixed with proper resource management
 """
 import asyncio
 import spacy
-import asyncio
 from typing import Dict, List, Any
 from concurrent.futures import ThreadPoolExecutor
 from nlp_providers.base import NLPProvider, ProviderCapabilities, ProcessingOptions, ProviderStatus

@@ -1,0 +1,193 @@
+{
+  "dashboard": {
+    "title": "NLP Pipeline Overview",
+    "tags": ["nlp", "pipeline", "overview"],
+    "timezone": "browser",
+    "schemaVersion": 27,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "type": "graph",
+        "title": "Entity Extraction Rate",
+        "targets": [
+          {
+            "expr": "rate(pipeline_entities_extracted_total[5m])",
+            "legendFormat": "{{domain}}"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ops",
+            "label": "Entities/second"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "type": "graph",
+        "title": "Pipeline Latency (p95)",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(pipeline_latency_seconds_bucket[5m]))",
+            "legendFormat": "{{domain}} - {{stage}}"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "s",
+            "label": "Latency"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8},
+        "type": "stat",
+        "title": "NER Stage Success Rate",
+        "targets": [
+          {
+            "expr": "sum(rate(pipeline_stage_completed_total{stage=\"ner\"}[5m])) / sum(rate(pipeline_stage_started_total{stage=\"ner\"}[5m]))"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 0.95, "color": "yellow"},
+                {"value": 0.99, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8},
+        "type": "stat",
+        "title": "KB Enrichment Success Rate",
+        "targets": [
+          {
+            "expr": "sum(rate(pipeline_kb_enriched_total[5m])) / sum(rate(pipeline_kb_lookup_attempts_total[5m]))"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 0.80, "color": "yellow"},
+                {"value": 0.90, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8},
+        "type": "stat",
+        "title": "Average Entities per Document",
+        "targets": [
+          {
+            "expr": "avg(pipeline_entities_per_document)"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "decimals": 1
+          }
+        }
+      },
+      {
+        "id": 6,
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+        "type": "table",
+        "title": "Pipeline Stage Breakdown",
+        "targets": [
+          {
+            "expr": "sum by (stage, domain) (rate(pipeline_stage_duration_seconds_sum[5m])) / sum by (stage, domain) (rate(pipeline_stage_duration_seconds_count[5m]))",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {"Time": true},
+              "indexByName": {"domain": 0, "stage": 1, "Value": 2}
+            }
+          }
+        ],
+        "options": {
+          "showHeader": true
+        },
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "displayMode": "color-background"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 0.2, "color": "yellow"},
+                {"value": 0.5, "color": "red"}
+              ]
+            },
+            "unit": "s"
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "domain"},
+              "properties": [
+                {"id": "custom.displayMode", "value": "auto"}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "stage"},
+              "properties": [
+                {"id": "custom.displayMode", "value": "auto"}
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

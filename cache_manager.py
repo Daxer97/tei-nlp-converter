@@ -1,11 +1,12 @@
 """
 cache_manager.py - Enhanced caching layer with connection pooling and retry logic
+
+Security: Uses JSON serialization instead of pickle to prevent arbitrary code execution
 """
 import tempfile
 import json
 import hashlib
-import pickle
-from typing import Optional, Any, Dict, List, Callable
+from typing import Optional, Any, Dict, List, Callable, Union
 from datetime import datetime, timedelta
 import redis
 from redis import ConnectionPool, Redis
@@ -103,10 +104,55 @@ class CacheManager:
         self.last_redis_check = datetime.utcnow()
         return self.redis_available
     
+    def _is_json_serializable(self, obj: Any) -> bool:
+        """Check if object is safe for JSON serialization"""
+        # Allow only JSON-safe types
+        if obj is None:
+            return True
+        if isinstance(obj, (str, int, float, bool)):
+            return True
+        if isinstance(obj, (list, tuple)):
+            return all(self._is_json_serializable(item) for item in obj)
+        if isinstance(obj, dict):
+            return all(
+                isinstance(k, str) and self._is_json_serializable(v)
+                for k, v in obj.items()
+            )
+        return False
+
+    def _serialize(self, value: Any) -> bytes:
+        """Safely serialize value to JSON bytes"""
+        if not self._is_json_serializable(value):
+            raise ValueError(
+                f"Value type {type(value).__name__} is not JSON-serializable. "
+                f"Only str, int, float, bool, list, dict, and None are allowed."
+            )
+        try:
+            json_str = json.dumps(value, ensure_ascii=False, default=str)
+            return json_str.encode('utf-8')
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"Failed to serialize value: {e}")
+
+    def _deserialize(self, data: bytes) -> Any:
+        """Safely deserialize JSON bytes with validation"""
+        try:
+            json_str = data.decode('utf-8')
+            value = json.loads(json_str)
+
+            # Validate deserialized type
+            if not self._is_json_serializable(value):
+                logger.error(f"Deserialized value has invalid type: {type(value)}")
+                raise ValueError("Invalid cached data type")
+
+            return value
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.error(f"Failed to deserialize cached value: {e}")
+            raise ValueError(f"Corrupted cache entry: {e}")
+
     def _with_retry(self, func: Callable, *args, **kwargs) -> Any:
         """Execute Redis operation with retry logic"""
         last_exception = None
-        
+
         for attempt in range(self.max_retries):
             try:
                 return func(*args, **kwargs)
@@ -146,9 +192,9 @@ class CacheManager:
                 value = self._with_retry(self.redis_client.get, key)
                 if value:
                     try:
-                        return pickle.loads(value)
-                    except (pickle.UnpicklingError, EOFError) as e:
-                        logger.error(f"Failed to unpickle cached value: {e}")
+                        return self._deserialize(value)
+                    except ValueError as e:
+                        logger.error(f"Failed to deserialize cached value: {e}")
                         # Delete corrupted cache entry
                         self._with_retry(self.redis_client.delete, key)
             except RedisError as e:
@@ -169,15 +215,15 @@ class CacheManager:
         """Set value in cache with fallback"""
         ttl = ttl or self.ttl
         success = False
-        
+
         # Try Redis first if available
         if self.redis_client and self._check_redis_health():
             try:
-                serialized = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+                serialized = self._serialize(value)
                 self._with_retry(self.redis_client.setex, key, ttl, serialized)
                 success = True
                 logger.debug(f"Cached to Redis: {key[:30]}...")
-            except (RedisError, pickle.PicklingError) as e:
+            except (RedisError, ValueError) as e:
                 logger.debug(f"Redis set error, falling back to memory: {e}")
         
         # Always cache to memory as fallback
