@@ -98,13 +98,16 @@ class NLPProcessor:
     def _get_provider_config(self, provider_name: str) -> Dict[str, Any]:
         """Get configuration for a specific provider with safe access"""
         config = {}
-        
+
+        # DEPRECATED: Google Cloud NLP provider removed
+        # Use local domain-specific NER models for better accuracy
         if provider_name == 'google':
-            config = {
-                'project_id': settings.get('google_project_id'),
-                'credentials_path': settings.get('google_credentials_path'),
-                'api_key': settings.get('google_api_key')
-            }
+            logger.warning(
+                "Google Cloud NLP provider is DEPRECATED and has been removed. "
+                "Use 'spacy' with domain-specific models or integrate domain_nlp module for "
+                "medical/legal/scientific NER with knowledge base enrichment."
+            )
+            raise ValueError("Google Cloud NLP provider is deprecated. Use 'spacy' or 'remote' instead.")
         elif provider_name == 'spacy':
             config = {
                 'model_name': settings.get('spacy_model', 'en_core_web_sm'),
@@ -122,7 +125,7 @@ class NLPProcessor:
 
         # Filter out None values
         config = {k: v for k, v in config.items() if v is not None}
-        
+
         return config
     
     async def process(self, text: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

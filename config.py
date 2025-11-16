@@ -41,11 +41,15 @@ class Settings(BaseSettings):
     # NLP Provider Configuration
     nlp_provider: str = "spacy"
     nlp_fallback_providers: List[str] = ["spacy"]
-    
-    # Google Cloud NLP Configuration
-    google_project_id: Optional[str] = None
-    google_credentials_path: Optional[str] = None
-    google_api_key: Optional[str] = None
+
+    # DEPRECATED: Google Cloud NLP Configuration - removed in favor of local domain-specific NER models
+    # Google Cloud NLP has been deprecated because:
+    # 1. Generic entity recognition lacks domain-specific understanding
+    # 2. Local models provide better accuracy for medical, legal, and other specialized domains
+    # 3. Reduces external dependencies and improves data privacy
+    # google_project_id: Optional[str] = None  # DEPRECATED
+    # google_credentials_path: Optional[str] = None  # DEPRECATED
+    # google_api_key: Optional[str] = None  # DEPRECATED
     
     # Database settings
     database_url: str = "sqlite:///data/tei_nlp.db"
@@ -136,9 +140,10 @@ class Settings(BaseSettings):
                 errors.append("Default or weak secret key detected in production")
         
         # Validate NLP provider
-        valid_providers = ["spacy", "google", "remote"]
+        # NOTE: "google" provider removed - use local domain-specific NER models instead
+        valid_providers = ["spacy", "remote"]
         if self.nlp_provider not in valid_providers:
-            errors.append(f"Invalid NLP provider: {self.nlp_provider}")
+            errors.append(f"Invalid NLP provider: {self.nlp_provider}. Valid options: {valid_providers}")
         
         if errors:
             raise ValueError(f"Configuration errors: {'; '.join(errors)}")
