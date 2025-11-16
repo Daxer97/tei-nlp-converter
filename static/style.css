@@ -354,6 +354,146 @@ textarea.form-control {
     color: #424242;
 }
 
+/* Medical Domain Entity Types */
+.entity-drug {
+    background-color: #ffebee;
+    color: #c62828;
+}
+
+.entity-disease {
+    background-color: #fce4ec;
+    color: #ad1457;
+}
+
+.entity-procedure {
+    background-color: #f3e5f5;
+    color: #7b1fa2;
+}
+
+.entity-anatomy {
+    background-color: #ede7f6;
+    color: #512da8;
+}
+
+.entity-code {
+    background-color: #e1f5fe;
+    color: #0277bd;
+    font-family: 'Monaco', 'Consolas', monospace;
+    font-weight: 600;
+}
+
+.entity-measure {
+    background-color: #e0f7fa;
+    color: #00838f;
+}
+
+/* Legal Domain Entity Types */
+.entity-law {
+    background-color: #fff8e1;
+    color: #ff8f00;
+}
+
+.entity-legal {
+    background-color: #fff3e0;
+    color: #e65100;
+}
+
+.entity-citation {
+    background-color: #fbe9e7;
+    color: #bf360c;
+    font-family: 'Monaco', 'Consolas', monospace;
+}
+
+/* Financial Domain Entity Types */
+.entity-financial {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+    font-weight: 600;
+}
+
+.entity-currency {
+    background-color: #f1f8e9;
+    color: #558b2f;
+}
+
+/* KB Enrichment Display */
+.kb-enrichment {
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: #f5f5f5;
+    border-radius: 4px;
+    border-left: 4px solid var(--secondary-color);
+}
+
+.kb-enrichment h5 {
+    margin-bottom: 0.75rem;
+    color: var(--secondary-color);
+    font-size: 0.95rem;
+}
+
+.kb-list {
+    list-style: none;
+    padding: 0;
+}
+
+.kb-list li {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.kb-list li:last-child {
+    border-bottom: none;
+}
+
+.kb-list li strong {
+    color: var(--primary-color);
+}
+
+.kb-list small {
+    color: var(--text-secondary);
+    display: block;
+    margin-top: 0.25rem;
+    line-height: 1.4;
+}
+
+.more-items {
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.nlp-section {
+    margin-bottom: 1.5rem;
+}
+
+.nlp-section h4 {
+    color: var(--primary-color);
+    margin-bottom: 0.75rem;
+    font-size: 1.1rem;
+}
+
+.sentence-list {
+    padding-left: 1.5rem;
+}
+
+.sentence-list li {
+    margin-bottom: 0.5rem;
+}
+
+.dependency-list {
+    list-style: none;
+    padding: 0;
+}
+
+.dependency-list li {
+    padding: 0.25rem 0;
+}
+
+.dep-type {
+    color: var(--secondary-color);
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
 /* Tree View */
 .tree-view {
     font-family: 'Monaco', 'Consolas', monospace;
