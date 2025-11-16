@@ -12,6 +12,8 @@ psycopg2-binary==2.9.9  # Added for PostgreSQL support
 # NLP
 spacy==3.7.2
 en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+transformers==4.36.0  # For Hugging Face NER models
+huggingface-hub==0.20.0  # For model discovery
 
 # Data validation
 pydantic==2.5.0
@@ -51,6 +53,7 @@ google-auth-oauthlib==1.1.0
 python-dotenv==1.0.0
 numpy==1.26.2
 python-dateutil==2.8.2
+PyYAML==6.0.1  # For domain configuration files
 
 # Testing
 pytest==7.4.3
