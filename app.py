@@ -389,7 +389,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 if settings.get('environment') == "production":
     app.add_middleware(
         TrustedHostMiddleware, 
-        allowed_hosts=["localhost", "127.0.0.1", ".yourdomain.com"]
+        allowed_hosts=["localhost", "127.0.0.1", "tei-nlp.proxlab.keenetic.pro"]
     )
 
 # Session middleware for CSRF
