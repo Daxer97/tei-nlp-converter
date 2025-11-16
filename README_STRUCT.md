@@ -34,8 +34,32 @@ tei-nlp-converter/
 │   ├── base.py                   # Abstract base provider
 │   ├── registry.py               # Provider registry
 │   ├── spacy_local.py            # SpaCy implementation
-│   ├── google_cloud.py           # Google Cloud NLP
 │   └── remote_server.py          # Remote NLP server client
+│   # NOTE: google_cloud.py DEPRECATED and REMOVED
+│
+├── domain_nlp/                    # Domain-specific NLP architecture (NEW)
+│   ├── __init__.py               # Package initialization
+│   ├── model_providers/          # NER model provider registry
+│   │   ├── base.py               # Abstract interfaces
+│   │   ├── registry.py           # Model discovery and management
+│   │   ├── spacy_provider.py     # SpaCy/SciSpaCy models
+│   │   └── huggingface_provider.py  # HuggingFace transformers
+│   ├── knowledge_bases/          # Knowledge base integration
+│   │   ├── base.py               # KB provider interfaces
+│   │   ├── registry.py           # KB registry with fallback chains
+│   │   └── cache.py              # Multi-tier caching system
+│   ├── pattern_matching/         # Domain-specific pattern extraction
+│   │   ├── patterns.py           # Medical, legal, financial patterns
+│   │   └── matcher.py            # Pattern matching engine
+│   ├── pipeline/                 # Processing pipeline
+│   │   ├── ensemble.py           # Ensemble merging strategies
+│   │   └── dynamic_pipeline.py   # Main orchestration pipeline
+│   ├── config/                   # Configuration system
+│   │   └── loader.py             # YAML-based domain configs
+│   └── utils/                    # Utilities
+│       └── db_models.py          # Database schemas for model/KB tracking
+│
+├── domain_nlp_integration.py      # Integration layer for new NLP system
 │
 ├── migrations/                    # Database migrations
 │   ├── versions/
@@ -138,8 +162,8 @@ tei-nlp-converter/
 ║  │  │                                                                      │ │     ║
 ║  │  │   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐            │ │     ║
 ║  │  │   │   app.py     │  │ NLP Pipeline │  │ TEI Convert  │            │ │     ║
-║  │  │   │   (Main)     │→ │  - SpaCy     │→ │  - Schemas   │            │ │     ║
-║  │  │   │              │  │  - Google    │  │  - XML Gen   │            │ │     ║
+║  │  │   │   (Main)     │→ │  - Domain    │→ │  - Schemas   │            │ │     ║
+║  │  │   │              │  │    Specific  │  │  - XML Gen   │            │ │     ║
 ║  │  │   └──────────────┘  └──────────────┘  └──────────────┘            │ │     ║
 ║  │  │         │                   │                 │                     │ │     ║
 ║  │  │         ├───────────────────┼─────────────────┤                     │ │     ║

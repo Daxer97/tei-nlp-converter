@@ -364,15 +364,58 @@ function displayNLPResults(nlpResults) {
         html += '<div class="nlp-section">';
         html += '<h4>Named Entities</h4>';
         html += '<div class="entities">';
-        
+
         nlpResults.entities.forEach(entity => {
             const entityClass = getEntityClass(entity.label);
             const text = SecurityUtils.escapeHtml(entity.text);
             const label = SecurityUtils.escapeHtml(entity.label);
-            html += `<span class="entity ${entityClass}" title="${label}">${text}</span> `;
+
+            // Build tooltip with additional info for domain-specific entities
+            let tooltip = label;
+            if (entity.confidence) {
+                tooltip += ` (${(entity.confidence * 100).toFixed(1)}% confidence)`;
+            }
+            if (entity.kb_enrichment) {
+                tooltip += `\nKB: ${entity.kb_enrichment.kb_id || 'unknown'}`;
+                if (entity.kb_enrichment.entity_id) {
+                    tooltip += ` - ID: ${entity.kb_enrichment.entity_id}`;
+                }
+            }
+
+            html += `<span class="entity ${entityClass}" title="${SecurityUtils.escapeHtml(tooltip)}">${text}</span> `;
         });
-        
-        html += '</div></div>';
+
+        html += '</div>';
+
+        // Show KB enrichment details if available
+        const enrichedEntities = nlpResults.entities.filter(e => e.kb_enrichment);
+        if (enrichedEntities.length > 0) {
+            html += '<div class="kb-enrichment">';
+            html += '<h5>Knowledge Base Enrichment</h5>';
+            html += '<ul class="kb-list">';
+
+            enrichedEntities.slice(0, 5).forEach(entity => {
+                const kb = entity.kb_enrichment;
+                const text = SecurityUtils.escapeHtml(entity.text);
+                const kbId = SecurityUtils.escapeHtml(kb.kb_id || 'unknown');
+                const entityId = SecurityUtils.escapeHtml(kb.entity_id || '');
+                const definition = kb.definition ? SecurityUtils.escapeHtml(kb.definition.substring(0, 150)) : '';
+
+                html += `<li><strong>${text}</strong> [${kbId}:${entityId}]`;
+                if (definition) {
+                    html += `<br><small>${definition}${kb.definition && kb.definition.length > 150 ? '...' : ''}</small>`;
+                }
+                html += '</li>';
+            });
+
+            if (enrichedEntities.length > 5) {
+                html += `<li class="more-items">... and ${enrichedEntities.length - 5} more enriched entities</li>`;
+            }
+
+            html += '</ul></div>';
+        }
+
+        html += '</div>';
     }
     
     // Sentences
@@ -415,10 +458,32 @@ function displayNLPResults(nlpResults) {
 
 function getEntityClass(label) {
     const labelLower = label.toLowerCase();
+
+    // Standard NLP entities
     if (['person', 'per'].includes(labelLower)) return 'entity-person';
     if (['location', 'loc', 'gpe'].includes(labelLower)) return 'entity-place';
     if (['organization', 'org'].includes(labelLower)) return 'entity-org';
     if (['date', 'time'].includes(labelLower)) return 'entity-time';
+
+    // Medical domain entities
+    if (['drug', 'chemical', 'medication'].includes(labelLower)) return 'entity-drug';
+    if (['disease', 'condition', 'symptom'].includes(labelLower)) return 'entity-disease';
+    if (['procedure', 'treatment'].includes(labelLower)) return 'entity-procedure';
+    if (['anatomy', 'body_part'].includes(labelLower)) return 'entity-anatomy';
+    if (['icd10_code', 'icd9_code', 'cpt_code', 'ndc_code'].includes(labelLower)) return 'entity-code';
+    if (['dosage', 'frequency'].includes(labelLower)) return 'entity-measure';
+
+    // Legal domain entities
+    if (['statute', 'law', 'regulation'].includes(labelLower)) return 'entity-law';
+    if (['court', 'judge', 'attorney'].includes(labelLower)) return 'entity-legal';
+    if (['case_citation', 'usc_citation', 'cfr_citation', 'public_law'].includes(labelLower)) return 'entity-citation';
+
+    // Financial domain entities
+    if (['ticker_symbol', 'stock'].includes(labelLower)) return 'entity-financial';
+    if (['currency_amount', 'money', 'percent'].includes(labelLower)) return 'entity-currency';
+    if (['cusip', 'isin'].includes(labelLower)) return 'entity-code';
+    if (['fiscal_period'].includes(labelLower)) return 'entity-time';
+
     return 'entity-misc';
 }
 

@@ -1,11 +1,15 @@
 """
 Provider registry and factory
+
+NOTE: Google Cloud NLP provider has been DEPRECATED and removed in favor of
+domain-specific local NER models that provide better accuracy for specialized domains.
 """
 import asyncio
 from typing import Dict, Type, Optional, List, Any
 from nlp_providers.base import NLPProvider, ProviderStatus
 from nlp_providers.spacy_local import SpacyLocalProvider
-from nlp_providers.google_cloud import GoogleCloudNLPProvider
+# DEPRECATED: GoogleCloudNLPProvider removed - using local domain-specific models instead
+# from nlp_providers.google_cloud import GoogleCloudNLPProvider
 from nlp_providers.remote_server import RemoteServerProvider
 from logger import get_logger
 
@@ -25,10 +29,12 @@ class ProviderRegistry:
     def _register_builtin_providers(self):
         """Register built-in providers"""
         self.register("spacy", SpacyLocalProvider)
-        self.register("google", GoogleCloudNLPProvider)
+        # DEPRECATED: Google Cloud NLP removed in favor of local domain-specific NER models
+        # self.register("google", GoogleCloudNLPProvider)
         self.register("remote", RemoteServerProvider)
-        
+
         logger.info(f"Registered {len(self._providers)} built-in providers")
+        logger.info("NOTE: Google Cloud NLP provider deprecated - use domain-specific local models")
     
     def register(self, name: str, provider_class: Type[NLPProvider]):
         """Register a new provider"""
