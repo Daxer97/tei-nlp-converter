@@ -120,19 +120,27 @@ class Storage:
                 "check_same_thread": False,
                 "timeout": 30  # 30 second busy timeout
             }
-            pool_size = 1
-            max_overflow = 0
-            pool_recycle = -1
-        
+            pool_size = None
+            max_overflow = None
+            pool_recycle = None
+
+        # Build engine kwargs dynamically - NullPool doesn't support pool_size/max_overflow/pool_recycle
+        engine_kwargs = {
+            "poolclass": pool_class,
+            "echo": settings.get('debug', False),
+            "connect_args": connect_args
+        }
+
+        # Only add pool parameters for databases that support them (not NullPool)
+        if pool_class != NullPool:
+            engine_kwargs["pool_size"] = pool_size
+            engine_kwargs["max_overflow"] = max_overflow
+            engine_kwargs["pool_recycle"] = pool_recycle
+            engine_kwargs["pool_pre_ping"] = True
+
         self.engine = create_engine(
             self.db_url,
-            poolclass=pool_class,    # ✅ correct
-            pool_size=pool_size,
-            max_overflow=max_overflow,
-            pool_recycle=pool_recycle,
-            pool_pre_ping=True,
-            echo=settings.get('debug', False),
-            connect_args=connect_args
+            **engine_kwargs
         )
 
         
