@@ -30,10 +30,12 @@ Il componente NLP estrae informazioni linguistiche e semantiche dal testo grezzo
 }
 ```
 
-Il sistema supporta **tre fornitori NLP**:
-- **SpaCy** (elaborazione locale)
-- **Google Cloud NLP** (basato su cloud)
+Il sistema supporta **modelli NLP domain-specific**:
+- **SpaCy** (elaborazione locale con modelli specializzati)
+- **Domain-Specific Models** (BioBERT, Legal-BERT, SciSpaCy)
 - **Server NLP Remoto** (deployment personalizzato)
+
+**NOTA**: Google Cloud NLP è stato deprecato e rimosso a favore di modelli NER locali domain-specific che offrono maggiore accuratezza per domini specializzati.
 
 ### 2. **Livello di Conversione TEI**
 Trasforma l'output NLP in formato TEI XML basato su schemi specifici per dominio.
