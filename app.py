@@ -387,9 +387,10 @@ app.add_middleware(
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 if settings.get('environment') == "production":
+    allowed_hosts = settings.get('allowed_hosts', ["localhost", "127.0.0.1"])
     app.add_middleware(
-        TrustedHostMiddleware, 
-        allowed_hosts=["localhost", "127.0.0.1", ".yourdomain.com"]
+        TrustedHostMiddleware,
+        allowed_hosts=allowed_hosts
     )
 
 # Session middleware for CSRF
