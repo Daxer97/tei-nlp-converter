@@ -10,6 +10,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ALLOWED_HOSTS=["localhost", "127.0.0.1", "tei-nlp.proxlab.keenetic.pro", ".proxlab.keenetic.pro"]
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
