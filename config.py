@@ -61,7 +61,14 @@ class Settings(BaseSettings):
     secret_key: str = os.environ.get("SECRET_KEY", secrets.token_urlsafe(32))
     encryption_key: str = os.environ.get("ENCRYPTION_KEY", Fernet.generate_key().decode())
     cors_origins: List[str] = ["http://localhost:3000"]
-    allowed_hosts: List[str] = ["localhost", "127.0.0.1"]
+    # Allowed hosts for TrustedHostMiddleware (production only)
+    # Include production domains and their subdomains with leading dot
+    allowed_hosts: List[str] = [
+        "localhost",
+        "127.0.0.1",
+        "tei-nlp.proxlab.keenetic.pro",  # Production domain
+        ".proxlab.keenetic.pro",  # All subdomains of proxlab.keenetic.pro
+    ]
     max_text_length: int = 100000
     rate_limit_per_minute: int = 100
     rate_limit_per_user: int = 200
