@@ -103,37 +103,35 @@ class Storage:
         self.is_postgresql = 'postgresql' in self.db_url
         self.is_sqlite = 'sqlite' in self.db_url
         
-        # PostgreSQL optimized settings
+        # Build engine arguments based on database type
+        engine_args = {
+            "echo": settings.get('debug', False),
+        }
+
+        # PostgreSQL optimized settings with connection pooling
         if self.is_postgresql:
-            pool_class = QueuePool
-            connect_args = {
-                "connect_timeout": 10,
-                "options": "-c statement_timeout=30000"  # 30 second statement timeout
-            }
-            pool_size = settings.get('database_pool_size', 20)
-            max_overflow = settings.get('database_max_overflow', 40)
-            pool_recycle = settings.get('database_pool_recycle', 3600)
+            engine_args.update({
+                "poolclass": QueuePool,
+                "pool_size": settings.get('database_pool_size', 20),
+                "max_overflow": settings.get('database_max_overflow', 40),
+                "pool_recycle": settings.get('database_pool_recycle', 3600),
+                "pool_pre_ping": True,
+                "connect_args": {
+                    "connect_timeout": 10,
+                    "options": "-c statement_timeout=30000"  # 30 second statement timeout
+                }
+            })
         else:
-            # SQLite settings
-            pool_class = NullPool  # No pooling for SQLite
-            connect_args = {
-                "check_same_thread": False,
-                "timeout": 30  # 30 second busy timeout
-            }
-            pool_size = 1
-            max_overflow = 0
-            pool_recycle = -1
-        
-        self.engine = create_engine(
-            self.db_url,
-            poolclass=pool_class,    # ✅ correct
-            pool_size=pool_size,
-            max_overflow=max_overflow,
-            pool_recycle=pool_recycle,
-            pool_pre_ping=True,
-            echo=settings.get('debug', False),
-            connect_args=connect_args
-        )
+            # SQLite settings - NullPool does not accept pool_size/max_overflow/pool_recycle/pool_pre_ping
+            engine_args.update({
+                "poolclass": NullPool,
+                "connect_args": {
+                    "check_same_thread": False,
+                    "timeout": 30  # 30 second busy timeout
+                }
+            })
+
+        self.engine = create_engine(self.db_url, **engine_args)
 
         
         # Use thread-local sessions for thread safety
