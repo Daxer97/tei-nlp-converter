@@ -15,6 +15,18 @@ en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_
 transformers==4.36.0  # For Hugging Face NER models
 huggingface-hub==0.20.0  # For model discovery
 
+# Classical Languages NLP
+cltk>=1.1.0  # Classical Language Toolkit for Latin and Greek
+# Note: LatinCy model should be installed separately:
+# pip install https://huggingface.co/latincy/la_core_web_lg/resolve/main/la_core_web_lg-any-py3-none-any.whl
+# Or use: python -m spacy download la_core_web_lg
+
+# Text similarity for fuzzy search
+python-Levenshtein>=0.20.0  # Fast Levenshtein distance calculation
+
+# XML processing
+lxml>=4.9.0  # For advanced XML parsing and generation
+
 # Data validation
 pydantic==2.5.0
 pydantic-settings==2.1.0

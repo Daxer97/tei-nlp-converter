@@ -38,13 +38,60 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     
                     <div class="form-group">
-                        <label for="domain">Ontological Domain:</label>
-                        <select id="domain" name="domain" class="form-control" aria-label="Select ontological domain">
-                            {% for domain in domains %}
-                            <option value="{{ domain }}">{{ domain|title }}</option>
-                            {% endfor %}
+                        <label for="processing-mode">Processing Mode:</label>
+                        <select id="processing-mode" name="processing_mode" class="form-control" aria-label="Select processing mode">
+                            <option value="general">General NLP</option>
+                            <option value="classical">Classical Languages (Latin/Greek)</option>
                         </select>
-                        <small class="help-text">Choose the domain for specialized TEI schema</small>
+                        <small class="help-text">Choose processing mode based on text type</small>
+                    </div>
+
+                    <!-- General Processing Options -->
+                    <div id="general-options">
+                        <div class="form-group">
+                            <label for="domain">Ontological Domain:</label>
+                            <select id="domain" name="domain" class="form-control" aria-label="Select ontological domain">
+                                {% for domain in domains %}
+                                <option value="{{ domain }}">{{ domain|title }}</option>
+                                {% endfor %}
+                            </select>
+                            <small class="help-text">Choose the domain for specialized TEI schema</small>
+                        </div>
+                    </div>
+
+                    <!-- Classical Language Options -->
+                    <div id="classical-options" style="display: none;">
+                        <div class="form-group">
+                            <label for="classical-language">Language:</label>
+                            <select id="classical-language" name="classical_language" class="form-control" aria-label="Select classical language">
+                                <option value="auto">Auto-detect (recommended)</option>
+                                <option value="latin">Latino</option>
+                                <option value="ancient_greek">Greco Antico</option>
+                            </select>
+                            <small class="help-text">Automatic detection works well for most texts</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="classical-model">NLP Model:</label>
+                            <select id="classical-model" name="classical_model" class="form-control" aria-label="Select NLP model">
+                                <option value="">Auto (based on language)</option>
+                                <optgroup label="Latino">
+                                    <option value="latincy">LatinCy (spaCy-based)</option>
+                                    <option value="cltk-latin">CLTK Latin</option>
+                                </optgroup>
+                                <optgroup label="Greco Antico">
+                                    <option value="cltk-greek">CLTK Greek</option>
+                                </optgroup>
+                            </select>
+                            <small class="help-text">Each model has different strengths</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="include-botanical" name="include_botanical" checked>
+                                Include botanical term annotations (Progetto Virgilio)
+                            </label>
+                        </div>
                     </div>
                     
                     <div class="form-group">
@@ -151,6 +198,99 @@
                 </div>
             </section>
             
+            <!-- Occurrence Search Section (Classical texts) -->
+            <section class="search-section card" id="occurrence-search" style="display: none;">
+                <h2>Ricerca Occorrenze</h2>
+
+                <form id="search-form">
+                    <div class="form-group">
+                        <label for="search-query">Parola da cercare:</label>
+                        <input type="text" id="search-query" class="form-control"
+                               placeholder="es. vitis, agricola, ager..." maxlength="200">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Modalita di ricerca:</label>
+                        <div class="radio-group">
+                            <label class="radio-label">
+                                <input type="radio" name="search-mode" value="exact" checked>
+                                Esatta (trova solo la forma esatta)
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="search-mode" value="lemmatized">
+                                Lemmatizzata (trova tutte le forme flesse)
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="search-mode" value="regex">
+                                Regex (espressione regolare)
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="search-mode" value="fuzzy">
+                                Fuzzy (varianti ortografiche)
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group half">
+                            <label for="words-before">Parole prima:</label>
+                            <select id="words-before" class="form-control">
+                                <option value="3">3</option>
+                                <option value="5" selected>5</option>
+                                <option value="7">7</option>
+                                <option value="10">10</option>
+                            </select>
+                        </div>
+                        <div class="form-group half">
+                            <label for="words-after">Parole dopo:</label>
+                            <select id="words-after" class="form-control">
+                                <option value="3">3</option>
+                                <option value="5" selected>5</option>
+                                <option value="7">7</option>
+                                <option value="10">10</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group" id="fuzzy-options" style="display: none;">
+                        <label for="fuzzy-threshold">Soglia similarita (fuzzy):</label>
+                        <input type="range" id="fuzzy-threshold" min="50" max="100" value="80" class="form-control">
+                        <span id="fuzzy-value">80%</span>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        Cerca Occorrenze
+                    </button>
+                </form>
+
+                <!-- Search Results -->
+                <div id="search-results" style="display: none;">
+                    <div class="search-stats">
+                        <span id="search-total">0 occorrenze trovate</span>
+                        <span id="search-frequency"></span>
+                    </div>
+
+                    <div class="search-actions">
+                        <button id="export-html-btn" class="btn btn-sm btn-secondary">
+                            Scarica Report HTML
+                        </button>
+                    </div>
+
+                    <div id="search-list" class="search-list"></div>
+
+                    <div id="search-wordcloud" class="wordcloud-section">
+                        <h3>Parole Circostanti</h3>
+                        <div class="wordcloud"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Botanical Terms Section -->
+            <section class="botanical-section card" id="botanical-results" style="display: none;">
+                <h2>Termini Botanici Identificati</h2>
+                <div id="botanical-list" class="botanical-list"></div>
+            </section>
+
             <!-- History Section -->
             <section class="history-section card">
                 <h2>Processing History</h2>
