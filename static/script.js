@@ -752,6 +752,403 @@ async function deleteHistoryItem(id) {
     }
 }
 
+// ============================================
+// Classical NLP Processing for Latin/Greek
+// ============================================
+
+// Classical NLP state
+const classicalState = {
+    cacheKey: null,
+    processingMode: 'general',
+    botanicalTerms: [],
+    searchResults: []
+};
+
+// Classical API utilities
+const ClassicalAPI = {
+    /**
+     * Process classical text
+     */
+    processText: async function(text, language, model, title, includeBotanical) {
+        const response = await fetch('/api/v2/classical/process', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': getCSRFToken()
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                text: SecurityUtils.sanitizeInput(text),
+                language: language,
+                model: model || null,
+                title: title || 'Classical Text',
+                include_botanical: includeBotanical
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        return await response.json();
+    },
+
+    /**
+     * Search occurrences
+     */
+    search: async function(cacheKey, query, mode, wordsBefore, wordsAfter, fuzzyThreshold) {
+        const params = new URLSearchParams({ cache_key: cacheKey });
+
+        const response = await fetch(`/api/v2/classical/search?${params}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': getCSRFToken()
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                query: query,
+                mode: mode,
+                words_before: parseInt(wordsBefore),
+                words_after: parseInt(wordsAfter),
+                fuzzy_threshold: parseFloat(fuzzyThreshold)
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        return await response.json();
+    },
+
+    /**
+     * Export HTML report
+     */
+    exportHTML: async function(cacheKey, query, mode, wordsBefore, wordsAfter) {
+        const params = new URLSearchParams({
+            cache_key: cacheKey,
+            download: 'true'
+        });
+
+        const response = await fetch(`/api/v2/classical/export/html?${params}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': getCSRFToken()
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                query: query,
+                mode: mode,
+                words_before: parseInt(wordsBefore),
+                words_after: parseInt(wordsAfter)
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to export HTML report');
+        }
+
+        // Download the file
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `occorrenze_${query}.html`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+    },
+
+    /**
+     * Detect language
+     */
+    detectLanguage: async function(text) {
+        const params = new URLSearchParams({ text: text.substring(0, 1000) });
+
+        const response = await fetch(`/api/v2/classical/detect-language?${params}`, {
+            headers: { 'X-CSRF-Token': getCSRFToken() },
+            credentials: 'same-origin'
+        });
+
+        if (!response.ok) {
+            throw new Error('Language detection failed');
+        }
+
+        return await response.json();
+    }
+};
+
+// Classical UI functions
+const ClassicalUI = {
+    /**
+     * Toggle between general and classical processing modes
+     */
+    toggleProcessingMode: function(mode) {
+        classicalState.processingMode = mode;
+
+        const generalOptions = document.getElementById('general-options');
+        const classicalOptions = document.getElementById('classical-options');
+        const occurrenceSearch = document.getElementById('occurrence-search');
+        const botanicalResults = document.getElementById('botanical-results');
+
+        if (mode === 'classical') {
+            generalOptions.style.display = 'none';
+            classicalOptions.style.display = 'block';
+        } else {
+            generalOptions.style.display = 'block';
+            classicalOptions.style.display = 'none';
+            occurrenceSearch.style.display = 'none';
+            botanicalResults.style.display = 'none';
+        }
+    },
+
+    /**
+     * Display botanical terms
+     */
+    displayBotanicalTerms: function(terms) {
+        const container = document.getElementById('botanical-list');
+        const section = document.getElementById('botanical-results');
+
+        if (!terms || terms.length === 0) {
+            section.style.display = 'none';
+            return;
+        }
+
+        section.style.display = 'block';
+
+        let html = '<table class="botanical-table"><thead><tr>';
+        html += '<th>Termine</th><th>Lemma</th><th>Nome Scientifico</th>';
+        html += '<th>Nome Comune</th><th>Occorrenze</th>';
+        html += '</tr></thead><tbody>';
+
+        terms.forEach(term => {
+            html += '<tr>';
+            html += `<td>${SecurityUtils.escapeHtml(term.text)}</td>`;
+            html += `<td>${SecurityUtils.escapeHtml(term.lemma)}</td>`;
+            html += `<td><em>${SecurityUtils.escapeHtml(term.scientific_name || '-')}</em></td>`;
+            html += `<td>${SecurityUtils.escapeHtml(term.common_name || '-')}</td>`;
+            html += `<td>${term.occurrences}</td>`;
+            html += '</tr>';
+        });
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    },
+
+    /**
+     * Display search results
+     */
+    displaySearchResults: function(response) {
+        const container = document.getElementById('search-list');
+        const resultsSection = document.getElementById('search-results');
+        const totalSpan = document.getElementById('search-total');
+        const freqSpan = document.getElementById('search-frequency');
+
+        resultsSection.style.display = 'block';
+
+        totalSpan.textContent = `${response.total_occurrences} occorrenze trovate`;
+        freqSpan.textContent = `(${response.statistics.frequency.toFixed(2)}% del testo)`;
+
+        if (response.results.length === 0) {
+            container.innerHTML = '<p class="empty-state">Nessuna occorrenza trovata</p>';
+            return;
+        }
+
+        let html = '';
+        response.results.forEach((result, index) => {
+            html += `
+                <div class="search-result-item">
+                    <span class="result-number">${index + 1}</span>
+                    <div class="result-context">
+                        <span class="context-before">${SecurityUtils.escapeHtml(result.context_before)}</span>
+                        <span class="result-word">${SecurityUtils.escapeHtml(result.word_found)}</span>
+                        <span class="context-after">${SecurityUtils.escapeHtml(result.context_after)}</span>
+                    </div>
+                    <div class="result-meta">
+                        Riga ${result.line_number}
+                        ${result.lemma ? ` | Lemma: ${result.lemma}` : ''}
+                        ${result.pos_tag ? ` | POS: ${result.pos_tag}` : ''}
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+
+        // Display word cloud
+        this.displayWordCloud(response.wordcloud_data);
+    },
+
+    /**
+     * Display word cloud
+     */
+    displayWordCloud: function(wordcloudData) {
+        const container = document.querySelector('#search-wordcloud .wordcloud');
+
+        if (!wordcloudData || wordcloudData.length === 0) {
+            container.innerHTML = '<span>Nessun dato disponibile</span>';
+            return;
+        }
+
+        const maxCount = Math.max(...wordcloudData.map(w => w.count));
+
+        let html = '';
+        wordcloudData.slice(0, 40).forEach(item => {
+            const size = 1 + (item.count / maxCount) * 2;
+            const hue = 200 + (item.count / maxCount) * 60;
+
+            html += `<span class="wordcloud-word" style="font-size: ${size}em; color: hsl(${hue}, 60%, 45%);">
+                ${SecurityUtils.escapeHtml(item.word)}
+            </span> `;
+        });
+
+        container.innerHTML = html;
+    },
+
+    /**
+     * Show fuzzy options
+     */
+    toggleFuzzyOptions: function(mode) {
+        const fuzzyOptions = document.getElementById('fuzzy-options');
+        fuzzyOptions.style.display = mode === 'fuzzy' ? 'block' : 'none';
+    }
+};
+
+/**
+ * Process classical text
+ */
+async function processClassicalText(text) {
+    const language = document.getElementById('classical-language').value;
+    const model = document.getElementById('classical-model').value;
+    const includeBotanical = document.getElementById('include-botanical').checked;
+    const button = document.getElementById('process-btn');
+
+    try {
+        UI.showLoading(button);
+        UI.showStatus('Elaborazione testo classico...', 'info');
+
+        const result = await ClassicalAPI.processText(
+            text, language, model, 'Classical Text', includeBotanical
+        );
+
+        // Store cache key for search
+        classicalState.cacheKey = result.metadata.cache_key;
+        classicalState.botanicalTerms = result.botanical_terms;
+
+        // Display results
+        displayResults({
+            tei_xml: result.tei_xml,
+            nlp_results: {
+                language: result.detected_language,
+                model: result.model_used,
+                word_count: result.word_count,
+                sentence_count: result.sentence_count
+            },
+            processing_time: result.processing_time_ms / 1000
+        });
+
+        // Show botanical terms
+        ClassicalUI.displayBotanicalTerms(result.botanical_terms);
+
+        // Show search section
+        document.getElementById('occurrence-search').style.display = 'block';
+
+        UI.showStatus(
+            `Testo elaborato con ${result.model_used}. Lingua: ${result.detected_language}`,
+            'success'
+        );
+
+    } catch (error) {
+        console.error('Classical processing error:', error);
+        UI.showStatus(`Errore: ${error.message}`, 'error');
+    } finally {
+        UI.hideLoading(button);
+    }
+}
+
+/**
+ * Handle occurrence search
+ */
+async function handleSearch(event) {
+    event.preventDefault();
+
+    const query = document.getElementById('search-query').value.trim();
+    if (!query) {
+        UI.showStatus('Inserisci un termine da cercare', 'warning');
+        return;
+    }
+
+    if (!classicalState.cacheKey) {
+        UI.showStatus('Prima elabora un testo', 'warning');
+        return;
+    }
+
+    const mode = document.querySelector('input[name="search-mode"]:checked').value;
+    const wordsBefore = document.getElementById('words-before').value;
+    const wordsAfter = document.getElementById('words-after').value;
+    const fuzzyThreshold = document.getElementById('fuzzy-threshold').value / 100;
+
+    try {
+        UI.showStatus('Ricerca in corso...', 'info');
+
+        const results = await ClassicalAPI.search(
+            classicalState.cacheKey,
+            query,
+            mode,
+            wordsBefore,
+            wordsAfter,
+            fuzzyThreshold
+        );
+
+        classicalState.searchResults = results;
+        ClassicalUI.displaySearchResults(results);
+
+        UI.showStatus(`Trovate ${results.total_occurrences} occorrenze`, 'success');
+
+    } catch (error) {
+        console.error('Search error:', error);
+        UI.showStatus(`Errore ricerca: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * Export HTML report
+ */
+async function exportSearchReport() {
+    const query = document.getElementById('search-query').value.trim();
+    if (!query || !classicalState.cacheKey) {
+        UI.showStatus('Esegui prima una ricerca', 'warning');
+        return;
+    }
+
+    const mode = document.querySelector('input[name="search-mode"]:checked').value;
+    const wordsBefore = document.getElementById('words-before').value;
+    const wordsAfter = document.getElementById('words-after').value;
+
+    try {
+        UI.showStatus('Generazione report HTML...', 'info');
+
+        await ClassicalAPI.exportHTML(
+            classicalState.cacheKey,
+            query,
+            mode,
+            wordsBefore,
+            wordsAfter
+        );
+
+        UI.showStatus('Report HTML scaricato', 'success');
+
+    } catch (error) {
+        console.error('Export error:', error);
+        UI.showStatus(`Errore export: ${error.message}`, 'error');
+    }
+}
+
 // Initialize on DOM load
 document.addEventListener('DOMContentLoaded', () => {
     // Load initial data
@@ -796,4 +1193,87 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Initialize char count
     UI.updateCharCount();
+
+    // Classical NLP event listeners
+    const processingModeSelect = document.getElementById('processing-mode');
+    if (processingModeSelect) {
+        processingModeSelect.addEventListener('change', (e) => {
+            ClassicalUI.toggleProcessingMode(e.target.value);
+        });
+    }
+
+    const searchForm = document.getElementById('search-form');
+    if (searchForm) {
+        searchForm.addEventListener('submit', handleSearch);
+    }
+
+    const exportHtmlBtn = document.getElementById('export-html-btn');
+    if (exportHtmlBtn) {
+        exportHtmlBtn.addEventListener('click', exportSearchReport);
+    }
+
+    // Fuzzy threshold slider
+    const fuzzyThreshold = document.getElementById('fuzzy-threshold');
+    if (fuzzyThreshold) {
+        fuzzyThreshold.addEventListener('input', (e) => {
+            document.getElementById('fuzzy-value').textContent = e.target.value + '%';
+        });
+    }
+
+    // Search mode radio buttons
+    const searchModeRadios = document.querySelectorAll('input[name="search-mode"]');
+    searchModeRadios.forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            ClassicalUI.toggleFuzzyOptions(e.target.value);
+        });
+    });
 });
+
+// Override processText for classical mode
+const originalProcessText = typeof processText === 'function' ? processText : null;
+
+async function processText(event) {
+    event.preventDefault();
+
+    const processingMode = document.getElementById('processing-mode')?.value || 'general';
+    const text = document.getElementById('text-input').value.trim();
+
+    if (!text) {
+        UI.showStatus('Please enter some text to process', 'warning');
+        return;
+    }
+
+    if (processingMode === 'classical') {
+        await processClassicalText(text);
+    } else {
+        // Call original general processing
+        const domain = document.getElementById('domain').value;
+        const button = document.getElementById('process-btn');
+
+        const options = {
+            include_dependencies: document.getElementById('include-dependencies')?.checked,
+            include_pos: document.getElementById('include-pos')?.checked,
+            include_lemma: document.getElementById('include-lemma')?.checked
+        };
+
+        try {
+            UI.showLoading(button);
+            UI.showStatus('Processing text...', 'info');
+
+            const result = await API.processText(text, domain, options);
+
+            if (result.task_id) {
+                startPolling(result.task_id);
+            } else {
+                state.currentProcessedId = result.id;
+                displayResults(result);
+                UI.showStatus('Processing completed successfully', 'success');
+            }
+        } catch (error) {
+            console.error('Processing error:', error);
+            UI.showStatus(`Error: ${error.message}`, 'error');
+        } finally {
+            UI.hideLoading(button);
+        }
+    }
+}
