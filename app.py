@@ -43,21 +43,13 @@ from middleware import (
     generate_csrf_token
 )
 from metrics import (
-    track_request,
-    active_tasks,
-    cache_hits,
+    track_request, 
+    active_tasks, 
+    cache_hits, 
     cache_misses,
     get_metrics
 )
 from circuit_breaker import CircuitBreaker, CircuitBreakerError
-
-# Classical NLP module (optional)
-try:
-    from classical_nlp.api import get_router as get_classical_router
-    CLASSICAL_NLP_AVAILABLE = True
-except ImportError:
-    CLASSICAL_NLP_AVAILABLE = False
-    get_classical_router = None
 
 # Initialize logger with request context
 logger = get_logger(__name__)
@@ -419,12 +411,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Setup templates
 templates = Jinja2Templates(directory="templates")
-
-# Register Classical NLP router if available
-if CLASSICAL_NLP_AVAILABLE and get_classical_router:
-    classical_router = get_classical_router()
-    app.include_router(classical_router)
-    logger.info("Classical NLP endpoints registered at /api/v2/classical")
 
 # Request/Response Models with enhanced validation
 class TextProcessRequest(BaseModel):
