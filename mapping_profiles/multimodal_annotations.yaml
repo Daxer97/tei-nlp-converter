@@ -1,0 +1,152 @@
+# Example: Multimodal and Complex Annotations
+# =============================================
+# This profile shows how to handle complex NLP outputs like:
+# - Coreference chains
+# - Semantic roles
+# - Sentiment analysis
+# - Custom domain annotations
+#
+# NO CODE CHANGES REQUIRED - just add new rules!
+
+profile_id: multimodal
+name: Multimodal NLP Annotations
+description: |
+  Handles complex annotation types from advanced NLP models:
+  coreference, semantic roles, sentiment, discourse relations.
+
+default_render_strategy: standoff
+include_provenance: true
+include_certainty: true
+use_feature_structures: true
+generate_ids: true
+
+rules:
+  # ===== Coreference Annotations =====
+  # Coreference chains link mentions of the same entity
+  - annotation_type: coreference
+    tei_element: linkGrp
+    render_strategy: standoff
+    attribute_map:
+      chain_id: corresp
+    include_features:
+      - main_mention
+      - mention_type
+      - animacy
+      - gender
+      - number
+    priority: 20
+
+  # Individual coreference mentions
+  - annotation_type: coref_mention
+    tei_element: link
+    render_strategy: standoff
+    attribute_map:
+      chain_id: ana
+      mention_type: type
+    priority: 15
+
+  # ===== Semantic Role Labeling =====
+  # Predicate-argument structures
+  - annotation_type: semantic_role
+    tei_element: seg
+    render_strategy: inline
+    attribute_map:
+      role: ana
+      predicate_id: corresp
+    include_features:
+      - role_type
+      - predicate_lemma
+      - frame
+    priority: 20
+
+  # Predicate markers
+  - annotation_type: predicate
+    tei_element: seg
+    render_strategy: inline
+    attribute_map:
+      frame: ana
+    include_features:
+      - frame_name
+      - verb_class
+    priority: 20
+
+  # ===== Sentiment Analysis =====
+  # Sentence-level sentiment
+  - annotation_type: sentiment
+    tei_element: interp
+    render_strategy: standoff
+    attribute_map:
+      polarity: type
+    include_features:
+      - score
+      - magnitude
+      - aspects
+    priority: 15
+
+  # Aspect-based sentiment
+  - annotation_type: aspect_sentiment
+    tei_element: interp
+    render_strategy: standoff
+    attribute_map:
+      aspect: ana
+      polarity: type
+    include_features:
+      - confidence
+      - aspect_category
+    priority: 15
+
+  # Opinion expressions
+  - annotation_type: opinion
+    tei_element: seg
+    render_strategy: inline
+    attribute_map:
+      holder: resp
+      target: corresp
+      polarity: ana
+    priority: 15
+
+  # ===== Discourse Relations =====
+  # Relations between discourse units
+  - annotation_type: discourse_relation
+    tei_element: link
+    render_strategy: standoff
+    attribute_map:
+      relation_type: type
+    include_features:
+      - sense
+      - connective
+    priority: 15
+
+  # Discourse segments
+  - annotation_type: discourse_unit
+    tei_element: seg
+    render_strategy: inline
+    attribute_map:
+      unit_type: type
+    priority: 10
+
+  # ===== Topic Modeling =====
+  - annotation_type: topic
+    tei_element: interp
+    render_strategy: standoff
+    attribute_map:
+      topic_id: xml:id
+    include_features:
+      - keywords
+      - weight
+      - label
+    priority: 10
+
+  # ===== Custom: Any New Type =====
+  # This pattern shows how to handle completely new annotation types
+  # Just define the mapping and it works!
+
+  - annotation_type: custom
+    category_pattern: ".*"  # Match anything
+    tei_element: seg
+    render_strategy: inline
+    attribute_map:
+      category: ana
+      label: type
+    include_features: []  # Include all features in <fs>
+    priority: 0
